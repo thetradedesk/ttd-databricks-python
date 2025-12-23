@@ -3,7 +3,8 @@ description: Bumps the version number based on release type (patch, minor, major
 inputs:
   release_type:
     description: The type of version bump. Must be one of patch, minor, or major
-    required: true
+    required: false
+    default: 'patch'
   current_version:
     description: The current version number (e.g., 1.2.3)
     required: true
@@ -20,6 +21,14 @@ runs:
       run: |
         VERSION="${{ inputs.current_version }}"
         TYPE="${{ inputs.release_type }}"
+        
+        # Default to patch if empty
+        if [[ -z "$TYPE" ]]; then
+          TYPE="patch"
+        fi
+        
+        # Convert to lowercase for case-insensitive matching
+        TYPE=$(echo "$TYPE" | tr '[:upper:]' '[:lower:]')
         
         IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
         
