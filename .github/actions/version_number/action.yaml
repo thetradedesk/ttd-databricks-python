@@ -1,0 +1,47 @@
+name: Bump Version Number
+description: Bumps the version number based on release type (patch, minor, major)
+inputs:
+  release_type:
+    description: The type of version bump. Must be one of patch, minor, or major
+    required: true
+  current_version:
+    description: The current version number (e.g., 1.2.3)
+    required: true
+outputs:
+  new_version:
+    description: The new version number after bumping
+    value: ${{ steps.bump.outputs.new_version }}
+runs:
+  using: "composite"
+  steps:
+    - name: Bump Version
+      id: bump
+      shell: bash
+      run: |
+        VERSION="${{ inputs.current_version }}"
+        TYPE="${{ inputs.release_type }}"
+        
+        IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
+        
+        case "$TYPE" in
+          major)
+            MAJOR=$((MAJOR + 1))
+            MINOR=0
+            PATCH=0
+            ;;
+          minor)
+            MINOR=$((MINOR + 1))
+            PATCH=0
+            ;;
+          patch)
+            PATCH=$((PATCH + 1))
+            ;;
+          *)
+            echo "Error: Invalid type '$TYPE'. Must be one of: patch, minor, major"
+            exit 1
+            ;;
+        esac
+        
+        NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+        echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+        echo "Bumped version: $VERSION -> $NEW_VERSION"
