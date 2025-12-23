@@ -18,6 +18,7 @@ on:
         type: string
         default: 'CRITICAL,HIGH'
   pull_request:
+  push:
 
 jobs:
   unit-tests:
