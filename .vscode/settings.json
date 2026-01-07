@@ -1,0 +1,11 @@
+{
+    "files.exclude": {
+        "**/.venv": true,
+        "**/__pycache__": true
+    },
+    "[python]": {
+        "editor.defaultFormatter": "charliermarsh.ruff",
+    },
+    "python.analysis.typeCheckingMode": "standard",
+    "ruff.lineLength": 120
+}

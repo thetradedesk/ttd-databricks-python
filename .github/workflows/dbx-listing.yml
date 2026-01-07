@@ -1,0 +1,60 @@
+name: Create or Update Databricks Marketplace Listing
+
+on:
+  workflow_dispatch:
+    inputs:
+      listing_directory:
+        description: 'Path to the listing directory (relative to dbx-listing/)'
+        required: true
+        type: choice
+        options:
+          - ./examples/listings/example_listing
+      dry_run:
+        description: 'Dry run mode'
+        required: false
+        default: true
+        type: boolean
+
+jobs:
+  update-marketplace-listing:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Run dbx-listing CLI
+        working-directory: dbx-listing
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_CLIENT_ID: ${{ secrets.DATABRICKS_CLIENT_ID }}
+          DATABRICKS_CLIENT_SECRET: ${{ secrets.DATABRICKS_CLIENT_SECRET }}
+          LISTING_DIR: ${{ inputs.listing_directory }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          DRY_RUN_FLAG=""
+          if [ "$DRY_RUN" = "true" ]; then
+            DRY_RUN_FLAG="--dry-run"
+          fi
+          uv run dbx-listing $DRY_RUN_FLAG "$LISTING_DIR"
+
+      - name: Commit listing_id.json if created
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          
+          # Check for any new or modified listing_id.json files
+          if git diff --name-only | grep -q "listing_id.json" || git ls-files --others --exclude-standard | grep -q "listing_id.json"; then
+            git add "**/listing_id.json"
+            git commit -m "chore: update listing_id.json [skip ci]"
+            git push
+            echo "Committed listing_id.json changes"
+          else
+            echo "No listing_id.json changes to commit"
+          fi
+
