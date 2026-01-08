@@ -80,6 +80,10 @@ jobs:
           python3 -m pip install --upgrade packaging
           python3 -m twine upload dist/* -u __token__ -p "${{ secrets.PYPI_API_KEY }}"
 
+      - name: Debug
+        run: |
+          git status
+
       - name: Commit pyproject.toml, version.json and set tag
         uses: ./.github/actions/commit_pr_and_merge
         with:
