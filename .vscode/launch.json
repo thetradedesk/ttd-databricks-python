@@ -1,0 +1,21 @@
+{
+    // .vscode/launch.json
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug dbx-listing (module)",
+            "type": "debugpy",
+            "request": "launch",
+            // Run package as a module -> triggers dbx_listing.__main__
+            "module": "dbx_listing",
+            "args": [
+                "./dbx-listing/examples/listings/example_listing/",
+                "--dry-run"
+            ],
+            // Optional: set the working directory to project root if needed
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "justMyCode": true
+        }
+    ]
+}
