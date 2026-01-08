@@ -84,10 +84,10 @@ jobs:
         run: |
           git status
 
-      - name: Commit pyproject.toml, version.json and set tag
+      - name: Commit pyproject.toml and set tag
         uses: ./.github/actions/commit_pr_and_merge
         with:
-          add: '${{ inputs.working_dir }}/pyproject.toml ${{ inputs.working_dir }}/version.json'
+          add: '${{ inputs.working_dir }}/pyproject.toml'
           message: 'Released ${{ inputs.release_type }} version: ${{ steps.version.outputs.new_version }}'
           tag: v${{ steps.version.outputs.new_version }}          
 
