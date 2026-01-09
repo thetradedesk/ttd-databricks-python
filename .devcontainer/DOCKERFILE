@@ -12,3 +12,6 @@ RUN SNIPPET="export PROMPT_COMMAND='history -a' && export HISTFILE=/commandhisto
 
 # Install the Databricks CLI
 RUN curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh | sh
+
+# Enable autocompletion for Databricks CLI
+RUN databricks completion bash > /etc/bash_completion.d/databricks
