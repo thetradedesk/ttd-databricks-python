@@ -29,11 +29,7 @@
     "notebooks": [
         {
             "display_name": "Sample notebook",
-            "path": "/Workspace/Users/matt.collins@unifiedid.com/SampleNotebook"
-        },
-        {
-            "display_name": "Metastore ID",
-            "path": "/Workspace/Users/matt.collins@unifiedid.com/Select current metastore"
+            "path": "/Workspace/Users/YOUR_CLIENT_ID_HERE/listing/notebooks/SampleNotebook"
         }
     ]
 }

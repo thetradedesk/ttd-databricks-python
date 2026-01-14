@@ -10,7 +10,7 @@ on:
         options:
           - ./examples/listings/example_listing
       dry_run:
-        description: 'Dry run mode'
+        description: 'Dry run mode (only applies to creating/updating the listing, not to importing notebooks)'
         required: false
         default: true
         type: boolean
@@ -24,6 +24,19 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Install Databricks CLI
+        uses: databricks/setup-cli@v0.282.0
+
+      - name: Import notebooks
+        working-directory: dbx-listing
+        run: databricks workspace import-dir --overwrite $SOURCE_PATH $TARGET_PATH
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_CLIENT_ID: ${{ vars.DATABRICKS_CLIENT_ID }}
+          DATABRICKS_CLIENT_SECRET: ${{ secrets.DATABRICKS_CLIENT_SECRET }}
+          SOURCE_PATH: ${{ inputs.listing_directory }}/notebooks
+          TARGET_PATH: /Workspace/Users/${{ vars.DATABRICKS_CLIENT_ID }}/listing/notebooks/
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
