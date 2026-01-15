@@ -13,7 +13,8 @@
 			"extensions": [
 				"ms-python.python",
 				"databricks.databricks",
-				"charliermarsh.ruff"
+				"charliermarsh.ruff",
+				"GitHub.vscode-github-actions"
 			],
 			"settings": {
 				"editor.defaultFormatter": "charliermarsh.ruff",
