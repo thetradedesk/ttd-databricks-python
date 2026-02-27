@@ -1,7 +1,7 @@
 """Schema definitions and validation utilities for TTD endpoints."""
 
 from enum import Enum
-from typing import List
+from typing import Callable, FrozenSet, List
 
 from ttd_databricks_python.ttd_databricks.endpoints import TTDEndpoint
 
@@ -19,26 +19,46 @@ class SchemaType(Enum):
 
 def _advertiser_input_schema():
     """
-    Mandatory columns for the /data/advertiser endpoint.
+    Schema for the /data/advertiser endpoint input table.
 
-    Each DataFrame row represents one audience membership:
-      tdid      → AdvertiserDataItem.tdid        (TTD user identifier)
-      segment_name → AdvertiserData.name          (audience segment / data element name)
-                     also used in error responses as AdvertiserDataServerResponseLine.data_name
+    Each DataFrame row represents one audience membership for a single identity.
 
-    TODO: Extend beyond the minimal case to support additional AdvertiserDataItem identity fields
-      (daid, uid2, uid2_token, ramp_id, core_id, euid, euid_token, id5, net_id, first_id,
-      merkury_id, iqvia_ppid, cookie_mapping_partner_id) and optional AdvertiserData fields
-      (timestamp_utc, ttl_in_minutes, base_bid_cpm, base_bid_cpm_metadata, bid_factor).
+    Mandatory columns (not nullable):
+      id_type      → which AdvertiserDataItem identity field this row uses.
+                     Must be one of: tdid, daid, uid2, uid2_token, ramp_id, core_id,
+                     euid, euid_token, id5, net_id, first_id, merkury_id, iqvia_ppid.
+      id_value     → the identifier value for the given id_type.
+      segment_name → AdvertiserData.name (audience segment / data element name);
+                     also used in error responses as AdvertiserDataServerResponseLine.data_name.
+
+    Optional columns (nullable):
+      cookie_mapping_partner_id → AdvertiserDataItem.CookieMappingPartnerId
+      timestamp_utc             → AdvertiserData.TimestampUtc
+      ttl_in_minutes            → AdvertiserData.TtlInMinutes
+      base_bid_cpm              → AdvertiserData.BaseBidCPM
+      base_bid_cpm_metadata     → AdvertiserData.BaseBidCPMMetadata
+      bid_factor                → AdvertiserData.BidFactor
     """
-    from pyspark.sql.types import StructType, StructField, StringType
+    from pyspark.sql.types import (
+        StructType, StructField,
+        StringType, TimestampType, IntegerType, DoubleType,
+    )
     return StructType([
-        StructField("tdid", StringType(), True),
-        StructField("segment_name", StringType(), True),
+        # Mandatory
+        StructField("id_type", StringType(), False),
+        StructField("id_value", StringType(), False),
+        StructField("segment_name", StringType(), False),
+        # Optional
+        StructField("cookie_mapping_partner_id", StringType(), True),
+        StructField("timestamp_utc", TimestampType(), True),
+        StructField("ttl_in_minutes", IntegerType(), True),
+        StructField("base_bid_cpm", DoubleType(), True),
+        StructField("base_bid_cpm_metadata", StringType(), True),
+        StructField("bid_factor", DoubleType(), True),
     ])
 
 
-_ENDPOINT_SCHEMA_FACTORIES: dict = {
+_ENDPOINT_SCHEMA_FACTORIES: dict[TTDEndpoint, Callable] = {
     TTDEndpoint.ADVERTISER: _advertiser_input_schema,
 }
 
@@ -51,6 +71,22 @@ _STATUS_COLUMNS = [
 
 
 # ---------------------------------------------------------------------------
+# Public constants
+# ---------------------------------------------------------------------------
+
+# Fields passed to AdvertiserData
+ADVERTISER_DATA_OPTIONAL_FIELDS: FrozenSet[str] = frozenset({
+    "timestamp_utc", "ttl_in_minutes", "base_bid_cpm",
+    "base_bid_cpm_metadata", "bid_factor",
+})
+
+# Fields passed to AdvertiserDataItem
+ADVERTISER_DATA_ITEM_OPTIONAL_FIELDS: FrozenSet[str] = frozenset({
+    "cookie_mapping_partner_id",
+})
+
+
+# ---------------------------------------------------------------------------
 # Public schema helpers
 # ---------------------------------------------------------------------------
 
@@ -58,8 +94,10 @@ def get_ttd_input_schema(endpoint: TTDEndpoint):
     """
     Returns the TTD input schema (StructType) for the given endpoint.
 
-    The schema defines all mandatory columns. Client DataFrames may contain
-    additional columns — these are preserved in output but ignored during API submission.
+    The schema defines all columns (mandatory and optional) for the endpoint.
+    Non-nullable columns must be present in the DataFrame. Nullable columns are
+    filled automatically if omitted. Extra columns are preserved in output but
+    ignored during API submission.
 
     Args:
         endpoint: TTDEndpoint enum specifying which endpoint's schema to return.
@@ -78,16 +116,17 @@ def get_ttd_input_schema(endpoint: TTDEndpoint):
     return _ENDPOINT_SCHEMA_FACTORIES[endpoint]()
 
 
-def get_mandatory_column_names(endpoint: TTDEndpoint) -> List[str]:
+def get_required_column_names(endpoint: TTDEndpoint) -> List[str]:
     """
-    Returns the list of mandatory column names for the given endpoint.
+    Returns the list of required (non-nullable) column names for the given endpoint.
 
-    Derived from the endpoint's StructType schema.
+    Nullable columns are optional — they may be omitted from the DataFrame entirely
+    and will be filled with null by the client before submission.
 
     Raises:
         TTDConfigurationError: If no schema is defined for the endpoint.
     """
-    return [field.name for field in get_ttd_input_schema(endpoint).fields]
+    return [field.name for field in get_ttd_input_schema(endpoint).fields if not field.nullable]
 
 
 def validate_ttd_schema(
@@ -110,12 +149,12 @@ def validate_ttd_schema(
     """
     from ttd_databricks_python.ttd_databricks.exceptions import TTDSchemaValidationError
 
-    required = get_mandatory_column_names(endpoint)
+    required_columns = get_required_column_names(endpoint)
     if schema_type == SchemaType.OUTPUT:
-        required = required + [name for name, _ in _STATUS_COLUMNS]
+        required_columns = required_columns + [name for name, _ in _STATUS_COLUMNS]
 
-    actual = set(df.schema.fieldNames())
-    missing = [col_name for col_name in required if col_name not in actual]
+    provided_columns = set(df.schema.fieldNames())
+    missing = [col_name for col_name in required_columns if col_name not in provided_columns]
 
     if missing:
         raise TTDSchemaValidationError(
