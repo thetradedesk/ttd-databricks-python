@@ -37,8 +37,7 @@ class TtdDatabricksClient:
         """
         Initialize TTD Databricks client via dependency injection.
 
-        Spark session is only required for batch processing mode.
-        For ad hoc mode, will auto-detect from Databricks context if not provided.
+        Auto-detect spark session unless explicitly provided.
 
         Dependency Injection pattern:
         - data_api_client: Required. Injected DataClient instance (from ttd-data package).
@@ -367,7 +366,7 @@ class TtdDatabricksClient:
             TTDApiError: On unrecoverable HTTP errors (403, 413, 5xx, etc.).
         """
         from ttd_data.models import AdvertiserDataItem, AdvertiserData  # type: ignore[import]
-        from ttd_data.errors import AdvertiserDataServerResponseError  # type: ignore[import]
+        from ttd_data.errors import AdvertiserDataServerResponseError, APIError, NoResponseError  # type: ignore[import]
         from ttd_data.types import UNSET  # type: ignore[import]
         from ttd_databricks_python.ttd_databricks.exceptions import TTDApiError
 
@@ -404,11 +403,19 @@ class TtdDatabricksClient:
             if fl is not UNSET and fl is not None:
                 failed_lines = fl
 
-        except Exception as exc:
-            # 403, 413, 5xx
+        except (APIError, NoResponseError) as exc:
+            # SDK-level errors: HTTP errors (403, 413, 5xx) or no response received
             raw = getattr(exc, "raw_response", None)
             raise TTDApiError(
-                status_code=getattr(raw, "status_code", 0),
+                status_code=getattr(raw, "status_code", None),
+                response_text=str(exc),
+                batch_index=batch_index,
+            ) from exc
+
+        except Exception as exc:
+            # Unexpected non-SDK errors (e.g. programming errors, unexpected library exceptions)
+            raise TTDApiError(
+                status_code=None,
                 response_text=str(exc),
                 batch_index=batch_index,
             ) from exc

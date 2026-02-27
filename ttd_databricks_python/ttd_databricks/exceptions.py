@@ -1,6 +1,6 @@
 """Custom exceptions for the TTD Databricks SDK."""
 
-from typing import List
+from typing import List, Optional
 
 
 class TTDError(Exception):
@@ -11,12 +11,13 @@ class TTDError(Exception):
 class TTDApiError(TTDError):
     """Raised when the TTD API returns a non-2xx status for an entire batch request."""
 
-    def __init__(self, status_code: int, response_text: str, batch_index: int):
+    def __init__(self, status_code: Optional[int], response_text: str, batch_index: int):
         self.status_code = status_code
         self.response_text = response_text
         self.batch_index = batch_index
+        status_str = str(status_code) if status_code is not None else "no response"
         super().__init__(
-            f"TTD API returned HTTP {status_code} for batch {batch_index}: {response_text}"
+            f"TTD API error (HTTP {status_str}) for batch {batch_index}: {response_text}"
         )
 
 
