@@ -6,8 +6,7 @@ from typing import Optional, Union
 # ttd-data is the external SDK for the TTD Data API.
 # Install via: pip install ttd-data
 # DataClient is the main HTTP client. The TTD-Auth token is passed per API call.
-from ttd_data import DataClient  # type: ignore[import]
-
+from ttd_data import DataClient
 from ttd_databricks_python.ttd_databricks.contexts import AdvertiserContext, ThirdPartyContext
 from ttd_databricks_python.ttd_databricks.endpoints import TTDEndpoint
 
@@ -149,7 +148,8 @@ class TtdDatabricksClient:
 
         - context: Typed context object (AdvertiserContext, ThirdPartyContext, etc.)
           Contains endpoint-specific config (data_provider_id, advertiser_id, etc.)
-        - input_table: Delta table name to read from.
+        - input_table: Delta table name to read from. Must contain all mandatory columns for
+          context.endpoint. Nullable columns may be omitted — they will be filled with null automatically.
         - output_table: Delta table name to write results to.
         - metadata_table: Optional. Table to track last_processed_date and run stats.
         - process_new_records_only: If True, filters input to rows where
@@ -171,6 +171,7 @@ class TtdDatabricksClient:
             if last_date is not None:
                 df = df.filter(F.col("updated_at") > last_date)
 
+        df = self._fill_nullable_columns(df, context.endpoint)
         validate_ttd_schema(df, context.endpoint)
 
         records_count = df.count()
@@ -179,15 +180,9 @@ class TtdDatabricksClient:
                 self._write_metadata(spark, metadata_table, 0)
             return
 
-        context_dict = {
-            "data_provider_id": context.data_provider_id,
-            "advertiser_id": getattr(context, "advertiser_id", None),
-            "base_url_override": context.base_url_override,
-        }
-
         batched_df = pre_batch_df(df, batch_size, records_count)
-        udf_fn = get_batch_udf(context.endpoint, self._api_token, context_dict)
-        output_schema = get_output_schema(spark.table(input_table).schema)
+        udf_fn = get_batch_udf(context.endpoint, self._api_token, context)
+        output_schema = get_output_schema(df.schema)
         output_df = apply_udf_and_explode(batched_df, udf_fn, output_schema, parallelism)
 
         output_df.write.format("delta").mode("append").saveAsTable(output_table)
@@ -361,92 +356,31 @@ class TtdDatabricksClient:
                 "Databricks environment or have pyspark available."
             ) from exc
 
-    def _call_api(
-        self,
-        context: Union[AdvertiserContext, ThirdPartyContext],
-        rows: list,
-        batch_index: int,
-    ) -> list:
-        """Dispatch to the endpoint-specific API call based on context type."""
-        if isinstance(context, AdvertiserContext):
-            return self._call_advertiser_api(context, rows, batch_index)
-        raise NotImplementedError(
-            f"No API implementation for context type: {type(context).__name__}"
-        )
+    def _call_api(self, context, rows: list, batch_index: int) -> list:
+        """Call the endpoint API for a batch of Spark Rows.
 
-    def _call_advertiser_api(
-        self,
-        context: AdvertiserContext,
-        rows: list,
-        batch_index: int,
-    ) -> list:
-        """
-        Call DataClient.advertiser.ingest_advertiser_data() for a batch of Spark Rows.
+        Delegates item-building and the API call to the endpoint-specific handler module,
+        then applies shared failed_lines parsing to produce per-row result dicts with keys:
+        success (bool), error_code (str|None), error_message (str|None).
 
-        Converts each Row to an AdvertiserDataItem (id_type/id_value + one AdvertiserData entry),
-        calls the API, then parses the response's failedLines to produce a per-row
-        result dict with keys: success (bool), error_code (str|None), error_message (str|None).
-
-        - rows: Spark Rows from df.collect(); each must have 'id_type', 'id_value', 'segment_name'.
+        - rows: Spark Rows from df.collect(); must contain the mandatory columns for context.endpoint.
         - batch_index: Zero-based batch number used in TTDApiError if the call fails.
 
         Raises:
             TTDApiError: On unrecoverable HTTP errors (403, 413, 5xx, etc.).
         """
-        from ttd_data.models import AdvertiserDataItem, AdvertiserData  # type: ignore[import]
-        from ttd_data.errors import AdvertiserDataServerResponseError, APIError, NoResponseError  # type: ignore[import]
-        from ttd_data.types import UNSET  # type: ignore[import]
+        import importlib
+        from ttd_data.errors import APIError, NoResponseError
+        from ttd_data.types import UNSET
         from ttd_databricks_python.ttd_databricks.exceptions import TTDApiError
-        from ttd_databricks_python.ttd_databricks.schemas import (
-            ADVERTISER_DATA_OPTIONAL_FIELDS,
-            ADVERTISER_DATA_ITEM_OPTIONAL_FIELDS,
-        )
         from ttd_databricks_python.ttd_databricks.utils import extract_item_number
 
-        # Build one AdvertiserDataItem per row.
-        # id_type determines which identity field to set (e.g. tdid, uid2, daid, etc.).
-        items = []
-        for row in rows:
-            row_dict = row.asDict()
+        handler = importlib.import_module(context.endpoint.handler_module)
+        items = handler.build_items([row.asDict() for row in rows])
 
-            adv_data_kwargs = {"name": row_dict["segment_name"]}
-            for field in ADVERTISER_DATA_OPTIONAL_FIELDS:
-                if row_dict[field] is not None:
-                    adv_data_kwargs[field] = row_dict[field]
-
-            adv_item_kwargs = {
-                row_dict["id_type"]: row_dict["id_value"],
-                "data": [AdvertiserData(**adv_data_kwargs)],
-            }
-            for field in ADVERTISER_DATA_ITEM_OPTIONAL_FIELDS:
-                if row_dict[field] is not None:
-                    adv_item_kwargs[field] = row_dict[field]
-
-            items.append(AdvertiserDataItem(**adv_item_kwargs))
-
-        # Call the API and capture failed_lines from either a 200 or a 400/429 response.
         failed_lines = []
         try:
-            response = self._data_api_client.advertiser.ingest_advertiser_data(
-                advertiser_id=context.advertiser_id,
-                ttd_auth=self._api_token,
-                data_provider_id=context.data_provider_id,
-                items=items,
-                server_url=context.base_url_override,
-            )
-            # 200 — check for partial failures in the response body
-            server_response = response.advertiser_data_server_response
-            if server_response is not None:
-                fl = server_response.failed_lines
-                if fl is not UNSET and fl is not None:
-                    failed_lines = fl
-
-        except AdvertiserDataServerResponseError as exc:
-            # 400/429 — structured error response; failed_lines identifies which rows failed
-            fl = exc.data.failed_lines
-            if fl is not UNSET and fl is not None:
-                failed_lines = fl
-
+            failed_lines = handler.call_api(self._data_api_client, context, items, self._api_token)
         except (APIError, NoResponseError) as exc:
             # SDK-level errors: HTTP errors (403, 413, 5xx) or no response received
             raw = getattr(exc, "raw_response", None)
@@ -455,7 +389,6 @@ class TtdDatabricksClient:
                 response_text=str(exc),
                 batch_index=batch_index,
             ) from exc
-
         except Exception as exc:
             # Unexpected non-SDK errors (e.g. programming errors, unexpected library exceptions)
             raise TTDApiError(
@@ -476,7 +409,7 @@ class TtdDatabricksClient:
 
         # Map each row to its result by 1-based position in the batch
         results = []
-        for i, row in enumerate(rows, start=1):
+        for i, _ in enumerate(rows, start=1):
             if i in failed_item_mapping:
                 results.append({
                     "success": False,
