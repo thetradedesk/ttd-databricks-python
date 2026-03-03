@@ -1,6 +1,5 @@
 """Main SDK class for submitting Spark DataFrames to TTD API endpoints."""
 
-import re
 from datetime import datetime, timezone
 from typing import Optional, Union
 
@@ -148,8 +147,6 @@ class TtdDatabricksClient:
 
         Updates metadata table if provided.
 
-        Requires SparkSession (will raise error if not available).
-
         - context: Typed context object (AdvertiserContext, ThirdPartyContext, etc.)
           Contains endpoint-specific config (data_provider_id, advertiser_id, etc.)
         - input_table: Delta table name to read from.
@@ -162,11 +159,41 @@ class TtdDatabricksClient:
         - batch_size: Number of rows per API request. Default 10.
         - parallelism: Number of parallel partitions for API calls. Default 8.
         """
-        raise NotImplementedError(
-            "batch_process: read input_table (optionally filtered by updated_at), "
-            "repartition by parallelism, call push_data via foreachBatch, "
-            "write to output_table, update metadata_table"
-        )
+        import pyspark.sql.functions as F
+        from ttd_databricks_python.ttd_databricks.schemas import validate_ttd_schema, get_output_schema
+        from ttd_databricks_python.ttd_databricks.batching import pre_batch_df, get_batch_udf, apply_udf_and_explode
+
+        spark = self._get_spark()
+        df = spark.table(input_table)
+
+        if process_new_records_only:
+            last_date = self._get_last_processed_date(spark, metadata_table, last_processed_date_override)
+            if last_date is not None:
+                df = df.filter(F.col("updated_at") > last_date)
+
+        validate_ttd_schema(df, context.endpoint)
+
+        records_count = df.count()
+        if records_count == 0:
+            if metadata_table:
+                self._write_metadata(spark, metadata_table, 0)
+            return
+
+        context_dict = {
+            "data_provider_id": context.data_provider_id,
+            "advertiser_id": getattr(context, "advertiser_id", None),
+            "base_url_override": context.base_url_override,
+        }
+
+        batched_df = pre_batch_df(df, batch_size, records_count)
+        udf_fn = get_batch_udf(context.endpoint, self._api_token, context_dict)
+        output_schema = get_output_schema(spark.table(input_table).schema)
+        output_df = apply_udf_and_explode(batched_df, udf_fn, output_schema, parallelism)
+
+        output_df.write.format("delta").mode("append").saveAsTable(output_table)
+
+        if metadata_table:
+            self._write_metadata(spark, metadata_table, records_count)
 
     # ------------------------------------------------------------------
     # Table setup utilities
@@ -374,6 +401,7 @@ class TtdDatabricksClient:
             ADVERTISER_DATA_OPTIONAL_FIELDS,
             ADVERTISER_DATA_ITEM_OPTIONAL_FIELDS,
         )
+        from ttd_databricks_python.ttd_databricks.utils import extract_item_number
 
         # Build one AdvertiserDataItem per row.
         # id_type determines which identity field to set (e.g. tdid, uid2, daid, etc.).
@@ -442,7 +470,7 @@ class TtdDatabricksClient:
         for line in failed_lines:
             message = line.message if line.message is not UNSET else None
             error_code = line.error_code.value if (line.error_code and line.error_code is not UNSET) else None
-            item_number = self._extract_item_number(message)
+            item_number = extract_item_number(message)
             if item_number is not None:
                 failed_item_mapping[item_number] = {"error_code": error_code, "error_message": message}
 
@@ -477,10 +505,30 @@ class TtdDatabricksClient:
                 df = df.withColumn(field.name, F.lit(None).cast(field.dataType))
         return df
 
-    @staticmethod
-    def _extract_item_number(message: str) -> int | None:
-        """Extract 1-based item number from an API error message (e.g. 'Invalid DAID, item #2' → 2)."""
-        if not message:
+    def _get_last_processed_date(self, spark, metadata_table, override):
+        """Return the last processed date for incremental filtering.
+
+        Returns override if provided, otherwise reads the max last_processed_date
+        from metadata_table. Returns None if metadata_table is unavailable or empty.
+        """
+        if override is not None:
+            return override
+        if metadata_table is None:
             return None
-        match = re.search(r"item #(\d+)", message, re.IGNORECASE)
-        return int(match.group(1)) if match else None
+        try:
+            import pyspark.sql.functions as F
+            return spark.table(metadata_table).agg(F.max("last_processed_date")).collect()[0][0]
+        except Exception:
+            return None
+
+    def _write_metadata(self, spark, metadata_table, records_processed):
+        """Append a run record to the metadata table."""
+        from datetime import datetime, timezone
+        from pyspark.sql import Row
+        from ttd_databricks_python.ttd_databricks.schemas import get_metadata_schema
+
+        now = datetime.now(timezone.utc)
+        spark.createDataFrame(
+            [Row(last_processed_date=now, run_timestamp=now, records_processed=records_processed)],
+            schema=get_metadata_schema(),
+        ).write.format("delta").mode("append").saveAsTable(metadata_table)
