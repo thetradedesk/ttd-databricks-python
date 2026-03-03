@@ -1,5 +1,6 @@
 """Main SDK class for submitting Spark DataFrames to TTD API endpoints."""
 
+import re
 from datetime import datetime, timezone
 from typing import Optional, Union
 
@@ -96,7 +97,8 @@ class TtdDatabricksClient:
 
         Returns: Original columns + success, error_code, error_message, processed_timestamp
 
-        - df: Input Spark DataFrame. Must contain all mandatory columns for context.endpoint.
+        - df: Input Spark DataFrame. Must contain all non-nullable columns for context.endpoint.
+          Nullable columns may be omitted — they will be filled with null automatically.
           Extra columns are preserved in the output but ignored during API submission.
         - context: Typed context object (AdvertiserContext, ThirdPartyContext, etc.)
           Contains endpoint-specific config (data_provider_id, advertiser_id, etc.)
@@ -104,6 +106,7 @@ class TtdDatabricksClient:
         """
         from ttd_databricks_python.ttd_databricks.schemas import validate_ttd_schema, get_output_schema
 
+        df = self._fill_nullable_columns(df, context.endpoint)
         validate_ttd_schema(df, context.endpoint)
 
         spark = self._get_spark()
@@ -326,8 +329,6 @@ class TtdDatabricksClient:
             self._spark = spark
             return spark
         except ImportError as exc:
-            from ttd_databricks_python.ttd_databricks.exceptions import TTDConfigurationError
-
             raise TTDConfigurationError(
                 "pyspark is not installed. TtdDatabricksClient must run in a "
                 "Databricks environment or have pyspark available."
@@ -355,11 +356,11 @@ class TtdDatabricksClient:
         """
         Call DataClient.advertiser.ingest_advertiser_data() for a batch of Spark Rows.
 
-        Converts each Row to an AdvertiserDataItem (tdid + one AdvertiserData entry),
+        Converts each Row to an AdvertiserDataItem (id_type/id_value + one AdvertiserData entry),
         calls the API, then parses the response's failedLines to produce a per-row
         result dict with keys: success (bool), error_code (str|None), error_message (str|None).
 
-        - rows: Spark Rows from df.collect(); each must have 'tdid' and 'segment_name'.
+        - rows: Spark Rows from df.collect(); each must have 'id_type', 'id_value', 'segment_name'.
         - batch_index: Zero-based batch number used in TTDApiError if the call fails.
 
         Raises:
@@ -369,16 +370,31 @@ class TtdDatabricksClient:
         from ttd_data.errors import AdvertiserDataServerResponseError, APIError, NoResponseError  # type: ignore[import]
         from ttd_data.types import UNSET  # type: ignore[import]
         from ttd_databricks_python.ttd_databricks.exceptions import TTDApiError
+        from ttd_databricks_python.ttd_databricks.schemas import (
+            ADVERTISER_DATA_OPTIONAL_FIELDS,
+            ADVERTISER_DATA_ITEM_OPTIONAL_FIELDS,
+        )
 
         # Build one AdvertiserDataItem per row.
-        # Each item has exactly one AdvertiserData entry (the segment membership).
-        items = [
-            AdvertiserDataItem(
-                tdid=row["tdid"],
-                data=[AdvertiserData(name=row["segment_name"])],
-            )
-            for row in rows
-        ]
+        # id_type determines which identity field to set (e.g. tdid, uid2, daid, etc.).
+        items = []
+        for row in rows:
+            row_dict = row.asDict()
+
+            adv_data_kwargs = {"name": row_dict["segment_name"]}
+            for field in ADVERTISER_DATA_OPTIONAL_FIELDS:
+                if row_dict[field] is not None:
+                    adv_data_kwargs[field] = row_dict[field]
+
+            adv_item_kwargs = {
+                row_dict["id_type"]: row_dict["id_value"],
+                "data": [AdvertiserData(**adv_data_kwargs)],
+            }
+            for field in ADVERTISER_DATA_ITEM_OPTIONAL_FIELDS:
+                if row_dict[field] is not None:
+                    adv_item_kwargs[field] = row_dict[field]
+
+            items.append(AdvertiserDataItem(**adv_item_kwargs))
 
         # Call the API and capture failed_lines from either a 200 or a 400/429 response.
         failed_lines = []
@@ -420,26 +436,51 @@ class TtdDatabricksClient:
                 batch_index=batch_index,
             ) from exc
 
-        # Build a lookup of (tdid, segment_name) → error info from failed_lines.
-        failed_map: dict = {}
+        # Build a lookup of 1-based item number → error info from failed_lines.
+        # The API identifies failed rows by item number in the Message field (e.g. "item #2").
+        failed_item_mapping: dict = {}
         for line in failed_lines:
-            tdid = line.tdid if line.tdid is not UNSET else None
-            segment_name = line.data_name if line.data_name is not UNSET else None
+            message = line.message if line.message is not UNSET else None
             error_code = line.error_code.value if (line.error_code and line.error_code is not UNSET) else None
-            message = line.message if (line.message and line.message is not UNSET) else None
-            failed_map[(tdid, segment_name)] = {"error_code": error_code, "error_message": message}
+            item_number = self._extract_item_number(message)
+            if item_number is not None:
+                failed_item_mapping[item_number] = {"error_code": error_code, "error_message": message}
 
-        # Map each row to its result
+        # Map each row to its result by 1-based position in the batch
         results = []
-        for row in rows:
-            key = (row["tdid"], row["segment_name"])
-            if key in failed_map:
+        for i, row in enumerate(rows, start=1):
+            if i in failed_item_mapping:
                 results.append({
                     "success": False,
-                    "error_code": failed_map[key]["error_code"],
-                    "error_message": failed_map[key]["error_message"],
+                    "error_code": failed_item_mapping[i]["error_code"],
+                    "error_message": failed_item_mapping[i]["error_message"],
                 })
             else:
                 results.append({"success": True, "error_code": None, "error_message": None})
 
         return results
+
+    @staticmethod
+    def _fill_nullable_columns(df, endpoint: TTDEndpoint):
+        """Add any missing nullable schema columns to the DataFrame as typed null columns.
+
+        This allows users to omit optional columns entirely — the library fills them in
+        with the correct Spark type so downstream processing and type inference don't fail.
+        Columns already present in the DataFrame are left untouched.
+        """
+        from pyspark.sql import functions as F
+        from ttd_databricks_python.ttd_databricks.schemas import get_ttd_input_schema
+
+        existing = set(df.schema.fieldNames())
+        for field in get_ttd_input_schema(endpoint).fields:
+            if field.nullable and field.name not in existing:
+                df = df.withColumn(field.name, F.lit(None).cast(field.dataType))
+        return df
+
+    @staticmethod
+    def _extract_item_number(message: str) -> int | None:
+        """Extract 1-based item number from an API error message (e.g. 'Invalid DAID, item #2' → 2)."""
+        if not message:
+            return None
+        match = re.search(r"item #(\d+)", message, re.IGNORECASE)
+        return int(match.group(1)) if match else None
