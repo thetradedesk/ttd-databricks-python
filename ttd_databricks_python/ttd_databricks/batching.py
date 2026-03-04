@@ -12,7 +12,6 @@ from typing import Callable
 
 import pyspark.sql.functions as F
 from pyspark.sql import DataFrame
-from pyspark.sql.window import Window
 
 from ttd_databricks_python.ttd_databricks.endpoints import TTDEndpoint
 
@@ -33,8 +32,9 @@ def pre_batch_df(df: DataFrame, batch_size: int, records_count: int) -> DataFram
     batch_count = math.ceil(records_count / batch_size)
     all_input_cols = [c for c in df.columns if not c.startswith("_")]
 
-    df = df.withColumn("_row_number", F.row_number().over(Window().orderBy(F.lit("A"))))
-    df = df.withColumn("_batch_id", F.col("_row_number") % batch_count)
+    # monotonically_increasing_id() assigns unique IDs locally per partition with no shuffle,
+    # unlike row_number() which requires a global sort across all partitions.
+    df = df.withColumn("_batch_id", F.monotonically_increasing_id() % batch_count)
 
     return df.groupBy("_batch_id").agg(
         F.to_json(F.collect_list(F.struct(*[F.col(c) for c in all_input_cols]))).alias("_items_json"),
