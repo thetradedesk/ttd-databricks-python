@@ -5,21 +5,25 @@ See the section "Design and Operational Considerations" for information on
 "Exactly Once vs At Least Once Guarantees" and "Estimating Cluster Core Count for a Target Throughput".
 
 See https://community.databricks.com/t5/data-engineering/using-pyspark-databricks-udfs-with-outside-function-imports/m-p/138556
-for an explanation of why UDF factories use inner functions/closures.
+for an explanation of why the UDF uses inner imports rather than top-level ones.
 """
+
+from __future__ import annotations
+
 import math
-from typing import Callable
+from typing import Any, Optional
 
 import pyspark.sql.functions as F
 from pyspark.sql import DataFrame
-from pyspark.sql.window import Window
-
+from pyspark.sql.types import StructType
+from ttd_data import DataClient
+from ttd_databricks_python.ttd_databricks.contexts import TTDContext
 from ttd_databricks_python.ttd_databricks.endpoints import TTDEndpoint
 
 # Per-worker-process DataClient singleton. Each executor runs UDF tasks in a
 # dedicated Python worker process, so there are no race conditions. Reusing the
 # client allows HTTP connection reuse across batches via the connection pool.
-_worker_client = None
+_worker_client: Optional[DataClient] = None
 
 
 def pre_batch_df(df: DataFrame, batch_size: int, records_count: int) -> DataFrame:
@@ -33,15 +37,14 @@ def pre_batch_df(df: DataFrame, batch_size: int, records_count: int) -> DataFram
     batch_count = math.ceil(records_count / batch_size)
     all_input_cols = [c for c in df.columns if not c.startswith("_")]
 
-    df = df.withColumn("_row_number", F.row_number().over(Window().orderBy(F.lit("A"))))
-    df = df.withColumn("_batch_id", F.col("_row_number") % batch_count)
+    df = df.withColumn("_batch_id", F.monotonically_increasing_id() % batch_count)
 
     return df.groupBy("_batch_id").agg(
         F.to_json(F.collect_list(F.struct(*[F.col(c) for c in all_input_cols]))).alias("_items_json"),
     )
 
 
-def apply_udf_and_explode(batched_df: DataFrame, udf_fn, output_schema, parallelism: int) -> DataFrame:
+def apply_udf_and_explode(batched_df: DataFrame, udf_fn: Any, output_schema: StructType, parallelism: int) -> DataFrame:
     """Apply endpoint UDF to batched_df and explode results back to per-row.
 
     Repartitions to target parallelism before applying the UDF so API calls
@@ -67,33 +70,26 @@ def apply_udf_and_explode(batched_df: DataFrame, udf_fn, output_schema, parallel
     ).withColumn("processed_timestamp", F.to_timestamp(F.col("processed_timestamp")))
 
 
-# ---------------------------------------------------------------------------
-# Endpoint-specific UDF factories
-# Each factory accepts (api_token, context_dict) and returns a Spark UDF.
-# context_dict contains only serializable primitives so Spark can ship it to workers.
-# ---------------------------------------------------------------------------
+def _build_generic_udf(api_token: str, context: TTDContext, handler_module: str) -> Any:
+    """Build a batch UDF that delegates item-building and API calls to the endpoint handler.
 
-def _build_advertiser_udf(api_token: str, context_dict: dict):
-    """Build the batch UDF for the ADVERTISER endpoint."""
-    from ttd_databricks_python.ttd_databricks.schemas import (
-        ADVERTISER_DATA_OPTIONAL_FIELDS,
-        ADVERTISER_DATA_ITEM_OPTIONAL_FIELDS,
-    )
-
-    # Capture as closure variables so values are serialized with the UDF.
-    adv_data_optional = ADVERTISER_DATA_OPTIONAL_FIELDS
-    adv_item_optional = ADVERTISER_DATA_ITEM_OPTIONAL_FIELDS
-
-    @F.udf("string")
-    def call_ttd_api_batch(items_json):
+    api_token, context, and handler_module are captured in the closure and serialized to
+    worker processes via cloudpickle. handler_module is kept as a plain string so the
+    handler module is imported lazily inside the UDF at execution time rather than
+    serializing a live module object.
+    """
+    @F.udf("string")  # type: ignore[misc]
+    def call_ttd_api_batch(items_json: Optional[str]) -> Optional[str]:
+        import importlib
         import json
         from datetime import datetime, timezone
         from ttd_data import DataClient
-        from ttd_data.models import AdvertiserDataItem, AdvertiserData
-        from ttd_data.errors import AdvertiserDataServerResponseError, APIError, NoResponseError
+        from ttd_data.errors import APIError, NoResponseError
         from ttd_data.types import UNSET
         from ttd_databricks_python.ttd_databricks.utils import extract_item_number
 
+        if items_json is None:
+            return None
         items_data = json.loads(items_json)
         timestamp = datetime.now(timezone.utc).isoformat()
 
@@ -103,46 +99,17 @@ def _build_advertiser_udf(api_token: str, context_dict: dict):
             _worker_client = DataClient()
         client = _worker_client
 
-        items = []
-        for d in items_data:
-            adv_data_kwargs = {"name": d["segment_name"]}
-            for field in adv_data_optional:
-                if d.get(field) is not None:
-                    adv_data_kwargs[field] = d[field]
-
-            adv_item_kwargs = {
-                d["id_type"]: d["id_value"],
-                "data": [AdvertiserData(**adv_data_kwargs)],
-            }
-            for field in adv_item_optional:
-                if d.get(field) is not None:
-                    adv_item_kwargs[field] = d[field]
-
-            items.append(AdvertiserDataItem(**adv_item_kwargs))
+        handler = importlib.import_module(handler_module)
+        items = handler.build_items(items_data)
 
         failed_lines = []
         try:
-            response = client.advertiser.ingest_advertiser_data(
-                advertiser_id=context_dict["advertiser_id"],
-                ttd_auth=api_token,
-                data_provider_id=context_dict["data_provider_id"],
-                items=items,
-                server_url=context_dict["base_url_override"],
-            )
-            server_response = response.advertiser_data_server_response
-            if server_response is not None:
-                response_failed_lines = server_response.failed_lines
-                if response_failed_lines is not UNSET and response_failed_lines is not None:
-                    failed_lines = response_failed_lines
-        except AdvertiserDataServerResponseError as exc:
-            response_failed_lines = exc.data.failed_lines
-            if response_failed_lines is not UNSET and response_failed_lines is not None:
-                failed_lines = response_failed_lines
+            failed_lines = handler.call_api(client, context, items, api_token)
         except (APIError, NoResponseError) as exc:
             raise RuntimeError(f"TTD API unrecoverable error: {exc}") from exc
 
         # Map 1-based item number → error info (API identifies failures by "item #N" in message)
-        failed_item_mapping = {}
+        failed_item_mapping: dict[int, dict[str, Optional[str]]] = {}
         for line in failed_lines:
             message = line.message if line.message is not UNSET else None
             error_code = line.error_code.value if (line.error_code and line.error_code is not UNSET) else None
@@ -150,7 +117,7 @@ def _build_advertiser_udf(api_token: str, context_dict: dict):
             if item_number is not None:
                 failed_item_mapping[item_number] = {"error_code": error_code, "error_message": message}
 
-        results = []
+        results: list[dict[str, Any]] = []
         for i, row in enumerate(items_data, start=1):
             r = dict(row)
             if i in failed_item_mapping:
@@ -168,20 +135,6 @@ def _build_advertiser_udf(api_token: str, context_dict: dict):
     return call_ttd_api_batch
 
 
-# ---------------------------------------------------------------------------
-# UDF registry — add new endpoints here as they are implemented.
-# ---------------------------------------------------------------------------
-
-_ENDPOINT_UDF_FACTORIES: dict[TTDEndpoint, Callable] = {
-    TTDEndpoint.ADVERTISER: _build_advertiser_udf,
-}
-
-
-def get_batch_udf(endpoint: TTDEndpoint, api_token: str, context_dict: dict):
-    """Return the endpoint-specific batch UDF, ready to apply to a batched DataFrame.
-
-    Raises NotImplementedError if no UDF factory is registered for the endpoint.
-    """
-    if endpoint not in _ENDPOINT_UDF_FACTORIES:
-        raise NotImplementedError(f"No batch UDF registered for endpoint: {endpoint}")
-    return _ENDPOINT_UDF_FACTORIES[endpoint](api_token, context_dict)
+def get_batch_udf(endpoint: TTDEndpoint, api_token: str, context: TTDContext) -> Any:
+    """Return the endpoint-specific batch UDF, ready to apply to a batched DataFrame."""
+    return _build_generic_udf(api_token, context, endpoint.handler_module)
