@@ -3,7 +3,8 @@
 
 def build_items(items_data: list) -> list:
     """Convert list of row dicts to AdvertiserDataItem SDK objects."""
-    from ttd_data.models import AdvertiserDataItem, AdvertiserData    from ttd_databricks_python.ttd_databricks.schemas.advertiser import DATA_OPTIONAL_FIELDS, ITEM_OPTIONAL_FIELDS
+    from ttd_data.models import AdvertiserDataItem, AdvertiserData
+    from ttd_databricks_python.ttd_databricks.schemas.advertiser import DATA_OPTIONAL_FIELDS, ITEM_OPTIONAL_FIELDS
 
     items = []
     for d in items_data:
@@ -30,7 +31,8 @@ def call_api(client, context, items: list, api_token: str) -> list:
     Raises APIError / NoResponseError on unrecoverable errors — caller is
     responsible for converting these to the appropriate exception type.
     """
-    from ttd_data.errors import AdvertiserDataServerResponseError    from ttd_data.types import UNSET
+    from ttd_data.errors import AdvertiserDataServerResponseError
+    from ttd_data.types import UNSET
     failed_lines = []
     try:
         response = client.advertiser.ingest_advertiser_data(
