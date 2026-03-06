@@ -8,17 +8,22 @@ See https://community.databricks.com/t5/data-engineering/using-pyspark-databrick
 for an explanation of why the UDF uses inner imports rather than top-level ones.
 """
 
+from __future__ import annotations
+
 import math
+from typing import Any, Optional
 
 import pyspark.sql.functions as F
 from pyspark.sql import DataFrame
+from pyspark.sql.types import StructType
+from ttd_data import DataClient
 from ttd_databricks_python.ttd_databricks.contexts import TTDContext
 from ttd_databricks_python.ttd_databricks.endpoints import TTDEndpoint
 
 # Per-worker-process DataClient singleton. Each executor runs UDF tasks in a
 # dedicated Python worker process, so there are no race conditions. Reusing the
 # client allows HTTP connection reuse across batches via the connection pool.
-_worker_client = None
+_worker_client: Optional[DataClient] = None
 
 
 def pre_batch_df(df: DataFrame, batch_size: int, records_count: int) -> DataFrame:
@@ -39,7 +44,7 @@ def pre_batch_df(df: DataFrame, batch_size: int, records_count: int) -> DataFram
     )
 
 
-def apply_udf_and_explode(batched_df: DataFrame, udf_fn, output_schema, parallelism: int) -> DataFrame:
+def apply_udf_and_explode(batched_df: DataFrame, udf_fn: Any, output_schema: StructType, parallelism: int) -> DataFrame:
     """Apply endpoint UDF to batched_df and explode results back to per-row.
 
     Repartitions to target parallelism before applying the UDF so API calls
@@ -65,7 +70,7 @@ def apply_udf_and_explode(batched_df: DataFrame, udf_fn, output_schema, parallel
     ).withColumn("processed_timestamp", F.to_timestamp(F.col("processed_timestamp")))
 
 
-def _build_generic_udf(api_token: str, context: TTDContext, handler_module: str):
+def _build_generic_udf(api_token: str, context: TTDContext, handler_module: str) -> Any:
     """Build a batch UDF that delegates item-building and API calls to the endpoint handler.
 
     api_token, context, and handler_module are captured in the closure and serialized to
@@ -73,8 +78,8 @@ def _build_generic_udf(api_token: str, context: TTDContext, handler_module: str)
     handler module is imported lazily inside the UDF at execution time rather than
     serializing a live module object.
     """
-    @F.udf("string")
-    def call_ttd_api_batch(items_json):
+    @F.udf("string")  # type: ignore[misc]
+    def call_ttd_api_batch(items_json: Optional[str]) -> Optional[str]:
         import importlib
         import json
         from datetime import datetime, timezone
@@ -83,6 +88,8 @@ def _build_generic_udf(api_token: str, context: TTDContext, handler_module: str)
         from ttd_data.types import UNSET
         from ttd_databricks_python.ttd_databricks.utils import extract_item_number
 
+        if items_json is None:
+            return None
         items_data = json.loads(items_json)
         timestamp = datetime.now(timezone.utc).isoformat()
 
@@ -102,7 +109,7 @@ def _build_generic_udf(api_token: str, context: TTDContext, handler_module: str)
             raise RuntimeError(f"TTD API unrecoverable error: {exc}") from exc
 
         # Map 1-based item number → error info (API identifies failures by "item #N" in message)
-        failed_item_mapping = {}
+        failed_item_mapping: dict[int, dict[str, Optional[str]]] = {}
         for line in failed_lines:
             message = line.message if line.message is not UNSET else None
             error_code = line.error_code.value if (line.error_code and line.error_code is not UNSET) else None
@@ -110,7 +117,7 @@ def _build_generic_udf(api_token: str, context: TTDContext, handler_module: str)
             if item_number is not None:
                 failed_item_mapping[item_number] = {"error_code": error_code, "error_message": message}
 
-        results = []
+        results: list[dict[str, Any]] = []
         for i, row in enumerate(items_data, start=1):
             r = dict(row)
             if i in failed_item_mapping:
@@ -128,6 +135,6 @@ def _build_generic_udf(api_token: str, context: TTDContext, handler_module: str)
     return call_ttd_api_batch
 
 
-def get_batch_udf(endpoint: TTDEndpoint, api_token: str, context: TTDContext):
+def get_batch_udf(endpoint: TTDEndpoint, api_token: str, context: TTDContext) -> Any:
     """Return the endpoint-specific batch UDF, ready to apply to a batched DataFrame."""
     return _build_generic_udf(api_token, context, endpoint.handler_module)

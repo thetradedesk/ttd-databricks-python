@@ -1,5 +1,12 @@
 """Schema and field definitions for the /data/thirdparty endpoint."""
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from pyspark.sql.types import StructType
+
 # Fields passed to ThirdPartyData
 DATA_OPTIONAL_FIELDS: frozenset[str] = frozenset({
     "timestamp_utc", "ttl_in_minutes",
@@ -11,7 +18,7 @@ ITEM_OPTIONAL_FIELDS: frozenset[str] = frozenset({
 })
 
 
-def input_schema():
+def input_schema() -> StructType:
     """
     Schema for the /data/thirdparty endpoint input table.
 

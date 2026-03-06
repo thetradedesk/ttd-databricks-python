@@ -1,8 +1,16 @@
 """Schema utilities for TTD endpoints."""
 
+from __future__ import annotations
+
 import importlib
 from enum import Enum
+from typing import TYPE_CHECKING
+
 from ttd_databricks_python.ttd_databricks.endpoints import TTDEndpoint
+
+if TYPE_CHECKING:
+    from pyspark.sql import DataFrame
+    from pyspark.sql.types import StructType
 
 
 class SchemaType(Enum):
@@ -10,7 +18,7 @@ class SchemaType(Enum):
     OUTPUT = "output"
 
 
-_STATUS_COLUMNS = [
+_STATUS_COLUMNS: list[tuple[str, str]] = [
     ("success", "boolean"),
     ("error_code", "string"),
     ("error_message", "string"),
@@ -18,7 +26,7 @@ _STATUS_COLUMNS = [
 ]
 
 
-def get_ttd_input_schema(endpoint: TTDEndpoint):
+def get_ttd_input_schema(endpoint: TTDEndpoint) -> StructType:
     """
     Returns the TTD input schema (StructType) for the given endpoint.
 
@@ -47,7 +55,7 @@ def get_required_column_names(endpoint: TTDEndpoint) -> list[str]:
 
 
 def validate_ttd_schema(
-    df,
+    df: DataFrame,
     endpoint: TTDEndpoint,
     schema_type: SchemaType = SchemaType.INPUT,
 ) -> None:
@@ -81,7 +89,7 @@ def validate_ttd_schema(
         )
 
 
-def get_output_schema(input_schema):
+def get_output_schema(input_schema: StructType) -> StructType:
     """
     Builds the output schema: input schema fields + status columns.
 
@@ -104,7 +112,7 @@ def get_output_schema(input_schema):
     return StructType(input_schema.fields + status_fields)
 
 
-def get_metadata_schema():
+def get_metadata_schema() -> StructType:
     """
     Returns the metadata table schema for tracking batch processing runs.
 

@@ -1,7 +1,9 @@
 """Main SDK class for submitting Spark DataFrames to TTD API endpoints."""
 
+from __future__ import annotations
+
 from datetime import datetime, timezone
-from typing import Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 # ttd-data is the external SDK for the TTD Data API.
 # Install via: pip install ttd-data
@@ -9,6 +11,9 @@ from typing import Optional
 from ttd_data import DataClient
 from ttd_databricks_python.ttd_databricks.contexts import TTDContext
 from ttd_databricks_python.ttd_databricks.endpoints import TTDEndpoint
+
+if TYPE_CHECKING:
+    from pyspark.sql import DataFrame, Row, SparkSession
 
 
 class TtdDatabricksClient:
@@ -31,8 +36,8 @@ class TtdDatabricksClient:
         self,
         data_api_client: DataClient,
         api_token: str,
-        spark=None,
-    ):
+        spark: Optional[SparkSession] = None,
+    ) -> None:
         """
         Initialize TTD Databricks client via dependency injection.
 
@@ -53,10 +58,10 @@ class TtdDatabricksClient:
     def from_params(
         cls,
         api_token: str,
-        spark=None,
+        spark: Optional[SparkSession] = None,
         uid2_key: Optional[str] = None,
         server_url: Optional[str] = None,
-    ) -> "TtdDatabricksClient":
+    ) -> TtdDatabricksClient:
         """
         Factory method to create TtdDatabricksClient from authentication tokens.
 
@@ -84,10 +89,10 @@ class TtdDatabricksClient:
 
     def push_data(
         self,
-        df,
+        df: DataFrame,
         context: TTDContext,
         batch_size: int = 10,
-    ):
+    ) -> DataFrame:
         """
         Process DataFrame and return results with status columns.
 
@@ -109,7 +114,7 @@ class TtdDatabricksClient:
 
         spark = self._get_spark()
         all_rows = df.collect()
-        result_rows = []
+        result_rows: list[dict[str, Any]] = []
 
         for batch_index, i in enumerate(range(0, len(all_rows), batch_size)):
             batch = all_rows[i : i + batch_size]
@@ -198,7 +203,7 @@ class TtdDatabricksClient:
         self,
         endpoint: TTDEndpoint,
         table_name: Optional[str] = None,
-        schema=None,  # TODO: support custom schemas
+        schema: None = None,  # TODO: support custom schemas
         location: Optional[str] = None,
     ) -> str:
         """
@@ -245,7 +250,7 @@ class TtdDatabricksClient:
     def setup_output_table(
         self,
         endpoint: TTDEndpoint,
-        input_schema=None,  # TODO: support custom input schemas
+        input_schema: None = None,  # TODO: support custom input schemas
         table_name: Optional[str] = None,
         location: Optional[str] = None,
     ) -> str:
@@ -330,7 +335,7 @@ class TtdDatabricksClient:
     # Private helpers
     # ------------------------------------------------------------------
 
-    def _get_spark(self):
+    def _get_spark(self) -> SparkSession:
         """Return the SparkSession, auto-detecting if not provided.
 
         Raises:
@@ -356,12 +361,12 @@ class TtdDatabricksClient:
                 "Databricks environment or have pyspark available."
             ) from exc
 
-    def _call_api(self, context: TTDContext, rows: list, batch_index: int) -> list:
+    def _call_api(self, context: TTDContext, rows: list[Row], batch_index: int) -> list[dict[str, Any]]:
         """Call the endpoint API for a batch of Spark Rows.
 
         Delegates item-building and the API call to the endpoint-specific handler module,
         then applies shared failed_lines parsing to produce per-row result dicts with keys:
-        success (bool), error_code (str|None), error_message (str|None).
+        success (bool), error_code (Optional[str]), error_message (Optional[str]).
 
         - rows: Spark Rows from df.collect(); must contain the mandatory columns for context.endpoint.
         - batch_index: Zero-based batch number used in TTDApiError if the call fails.
@@ -378,7 +383,7 @@ class TtdDatabricksClient:
         handler = importlib.import_module(context.endpoint.handler_module)
         items = handler.build_items([row.asDict() for row in rows])
 
-        failed_lines = []
+        failed_lines: list[Any] = []
         try:
             failed_lines = handler.call_api(self._data_api_client, context, items, self._api_token)
         except (APIError, NoResponseError) as exc:
@@ -399,7 +404,7 @@ class TtdDatabricksClient:
 
         # Build a lookup of 1-based item number → error info from failed_lines.
         # The API identifies failed rows by item number in the Message field (e.g. "item #2").
-        failed_item_mapping: dict = {}
+        failed_item_mapping: dict[int, dict[str, Optional[str]]] = {}
         for line in failed_lines:
             message = line.message if line.message is not UNSET else None
             error_code = line.error_code.value if (line.error_code and line.error_code is not UNSET) else None
@@ -408,7 +413,7 @@ class TtdDatabricksClient:
                 failed_item_mapping[item_number] = {"error_code": error_code, "error_message": message}
 
         # Map each row to its result by 1-based position in the batch
-        results = []
+        results: list[dict[str, Any]] = []
         for i, _ in enumerate(rows, start=1):
             if i in failed_item_mapping:
                 results.append({
@@ -422,7 +427,7 @@ class TtdDatabricksClient:
         return results
 
     @staticmethod
-    def _fill_nullable_columns(df, endpoint: TTDEndpoint):
+    def _fill_nullable_columns(df: DataFrame, endpoint: TTDEndpoint) -> DataFrame:
         """Add any missing nullable schema columns to the DataFrame as typed null columns.
 
         This allows users to omit optional columns entirely — the library fills them in
@@ -438,7 +443,7 @@ class TtdDatabricksClient:
                 df = df.withColumn(field.name, F.lit(None).cast(field.dataType))
         return df
 
-    def _get_last_processed_date(self, spark, metadata_table: Optional[str], override: Optional[datetime]) -> Optional[datetime]:
+    def _get_last_processed_date(self, spark: SparkSession, metadata_table: Optional[str], override: Optional[datetime]) -> Optional[datetime]:
         """Return the last processed date for incremental filtering.
 
         Returns override if provided, otherwise reads the max last_processed_date
@@ -450,11 +455,12 @@ class TtdDatabricksClient:
             return None
         try:
             import pyspark.sql.functions as F
-            return spark.table(metadata_table).agg(F.max("last_processed_date")).collect()[0][0]
+            last_processed_date: Optional[datetime] = spark.table(metadata_table).agg(F.max("last_processed_date")).collect()[0][0]
+            return last_processed_date
         except Exception:
             return None
 
-    def _write_metadata(self, spark, metadata_table: str, records_processed: int) -> None:
+    def _write_metadata(self, spark: SparkSession, metadata_table: str, records_processed: int) -> None:
         """Append a run record to the metadata table."""
         from pyspark.sql import Row
         from ttd_databricks_python.ttd_databricks.schemas import get_metadata_schema

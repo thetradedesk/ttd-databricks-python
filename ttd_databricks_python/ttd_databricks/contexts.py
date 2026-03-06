@@ -5,6 +5,8 @@ via cloudpickle to worker processes. All fields must be picklable (strings, bool
 ints, None). Do not add fields that hold open connections, file handles, or locks.
 """
 
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Optional

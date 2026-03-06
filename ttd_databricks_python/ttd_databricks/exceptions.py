@@ -1,5 +1,7 @@
 """Custom exceptions for the TTD Databricks SDK."""
 
+from __future__ import annotations
+
 from typing import Optional
 
 
@@ -11,7 +13,7 @@ class TTDError(Exception):
 class TTDApiError(TTDError):
     """Raised when the TTD API returns a non-2xx status for an entire batch request."""
 
-    def __init__(self, status_code: Optional[int], response_text: str, batch_index: int):
+    def __init__(self, status_code: Optional[int], response_text: str, batch_index: int) -> None:
         self.status_code = status_code
         self.response_text = response_text
         self.batch_index = batch_index
@@ -29,7 +31,7 @@ class TTDConfigurationError(TTDError):
 class TTDSchemaValidationError(TTDError):
     """Raised when DataFrame schema validation fails."""
 
-    def __init__(self, missing_columns: list[str], schema_type: str, endpoint_name: str):
+    def __init__(self, missing_columns: list[str], schema_type: str, endpoint_name: str) -> None:
         self.missing_columns = missing_columns
         self.schema_type = schema_type
         self.endpoint_name = endpoint_name

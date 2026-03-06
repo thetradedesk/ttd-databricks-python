@@ -1,8 +1,17 @@
 """API handler for the /data/thirdparty endpoint."""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
+
 from ttd_databricks_python.ttd_databricks.contexts import ThirdPartyContext
 
+if TYPE_CHECKING:
+    from ttd_data import DataClient
+    from ttd_data.models import ThirdPartyDataItem
 
-def build_items(items_data: list) -> list:
+
+def build_items(items_data: list[dict[str, Any]]) -> list[ThirdPartyDataItem]:
     """Convert list of row dicts to ThirdPartyDataItem SDK objects."""
     from ttd_data.models import ThirdPartyDataItem, ThirdPartyData
     from ttd_databricks_python.ttd_databricks.schemas.third_party import DATA_OPTIONAL_FIELDS, ITEM_OPTIONAL_FIELDS
@@ -26,7 +35,7 @@ def build_items(items_data: list) -> list:
     return items
 
 
-def call_api(client, context: ThirdPartyContext, items: list, api_token: str) -> list:
+def call_api(client: DataClient, context: ThirdPartyContext, items: list[ThirdPartyDataItem], api_token: str) -> list[Any]:
     """Call ingest_third_party_data. Returns failed_lines (may be empty).
 
     Raises APIError / NoResponseError on unrecoverable errors — caller is
