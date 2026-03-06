@@ -2,7 +2,8 @@
 
 Note: context objects are passed directly into Spark UDF closures and serialized
 via cloudpickle to worker processes. All fields must be picklable (strings, bools,
-ints, None). Do not add fields that hold open connections, file handles, or locks.
+ints, None, or picklable Enums). Do not add fields that hold open connections,
+file handles, or locks.
 """
 
 from __future__ import annotations
@@ -10,6 +11,8 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Optional
+
+from ttd_data.models import PartnerDsrRequestType
 
 from ttd_databricks_python.ttd_databricks.endpoints import TTDEndpoint
 
@@ -56,3 +59,49 @@ class ThirdPartyContext(TTDContext):
     data_provider_id: str
     is_user_id_already_hashed: bool = False
     endpoint: TTDEndpoint = field(default=TTDEndpoint.THIRD_PARTY, init=False)
+
+
+@dataclass
+class DeletionOptOutAdvertiserContext(TTDContext):
+    """Typed context for /data/deletion-optout/advertiser endpoint.
+
+    data_provider_id: DataProviderId for API requests.
+    advertiser_id: AdvertiserId for API requests.
+    request_type: Either "OptOut" or "Deletion".
+    base_url_override: Overrides default base URL. If None, uses endpoint-specific default.
+    """
+
+    data_provider_id: str
+    advertiser_id: str
+    request_type: PartnerDsrRequestType
+    endpoint: TTDEndpoint = field(default=TTDEndpoint.DELETION_OPTOUT_ADVERTISER, init=False)
+
+
+@dataclass
+class DeletionOptOutThirdPartyContext(TTDContext):
+    """Typed context for /data/deletion-optout/thirdparty endpoint.
+
+    data_provider_id: DataProviderId for API requests.
+    request_type: Either "OptOut" or "Deletion".
+    brand_id: Optional BrandId for API requests. Default None.
+    base_url_override: Overrides default base URL. If None, uses endpoint-specific default.
+    """
+
+    data_provider_id: str
+    request_type: PartnerDsrRequestType
+    brand_id: Optional[str] = None
+    endpoint: TTDEndpoint = field(default=TTDEndpoint.DELETION_OPTOUT_THIRDPARTY, init=False)
+
+
+@dataclass
+class DeletionOptOutMerchantContext(TTDContext):
+    """Typed context for /data/deletion-optout/merchant endpoint.
+
+    merchant_id: MerchantId for API requests.
+    request_type: Either "OptOut" or "Deletion".
+    base_url_override: Overrides default base URL. If None, uses endpoint-specific default.
+    """
+
+    merchant_id: int
+    request_type: PartnerDsrRequestType
+    endpoint: TTDEndpoint = field(default=TTDEndpoint.DELETION_OPTOUT_MERCHANT, init=False)
