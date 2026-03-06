@@ -1,14 +1,12 @@
 """Schema and field definitions for the /data/thirdparty endpoint."""
 
-from typing import FrozenSet
-
 # Fields passed to ThirdPartyData
-DATA_OPTIONAL_FIELDS: FrozenSet[str] = frozenset({
+DATA_OPTIONAL_FIELDS: frozenset[str] = frozenset({
     "timestamp_utc", "ttl_in_minutes",
 })
 
 # Fields passed to ThirdPartyDataItem
-ITEM_OPTIONAL_FIELDS: FrozenSet[str] = frozenset({
+ITEM_OPTIONAL_FIELDS: frozenset[str] = frozenset({
     "cookie_mapping_partner_id",
 })
 

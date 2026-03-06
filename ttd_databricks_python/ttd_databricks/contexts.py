@@ -5,14 +5,31 @@ via cloudpickle to worker processes. All fields must be picklable (strings, bool
 ints, None). Do not add fields that hold open connections, file handles, or locks.
 """
 
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Optional
 
 from ttd_databricks_python.ttd_databricks.endpoints import TTDEndpoint
 
 
+@dataclass(kw_only=True)
+class TTDContext(ABC):
+    """Base class for all TTD endpoint context objects.
+
+    base_url_override: Overrides the default base URL for API requests.
+    If None, each endpoint uses its own default.
+    """
+
+    base_url_override: Optional[str] = None
+
+    @property
+    @abstractmethod
+    def endpoint(self) -> TTDEndpoint:
+        """The TTD API endpoint this context targets."""
+
+
 @dataclass
-class AdvertiserContext:
+class AdvertiserContext(TTDContext):
     """Typed context for /data/advertiser endpoint.
 
     data_provider_id: DataProviderId for API requests.
@@ -22,12 +39,11 @@ class AdvertiserContext:
 
     data_provider_id: str
     advertiser_id: str
-    base_url_override: Optional[str] = None
     endpoint: TTDEndpoint = field(default=TTDEndpoint.ADVERTISER, init=False)
 
 
 @dataclass
-class ThirdPartyContext:
+class ThirdPartyContext(TTDContext):
     """Typed context for /data/thirdparty endpoint.
 
     data_provider_id: DataProviderId for API requests.
@@ -37,5 +53,4 @@ class ThirdPartyContext:
 
     data_provider_id: str
     is_user_id_already_hashed: bool = False
-    base_url_override: Optional[str] = None
     endpoint: TTDEndpoint = field(default=TTDEndpoint.THIRD_PARTY, init=False)

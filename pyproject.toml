@@ -7,7 +7,7 @@ name = "ttd-databricks"
 version = "1.0.4"
 description = "Client implementation and helper functions for integrating with the TTD Databricks services."
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [
     {name = "The Trade Desk"}

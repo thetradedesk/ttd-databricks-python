@@ -1,15 +1,13 @@
 """Schema and field definitions for the /data/advertiser endpoint."""
 
-from typing import FrozenSet
-
 # Fields passed to AdvertiserData
-DATA_OPTIONAL_FIELDS: FrozenSet[str] = frozenset({
+DATA_OPTIONAL_FIELDS: frozenset[str] = frozenset({
     "timestamp_utc", "ttl_in_minutes", "base_bid_cpm",
     "base_bid_cpm_metadata", "bid_factor",
 })
 
 # Fields passed to AdvertiserDataItem
-ITEM_OPTIONAL_FIELDS: FrozenSet[str] = frozenset({
+ITEM_OPTIONAL_FIELDS: frozenset[str] = frozenset({
     "cookie_mapping_partner_id",
 })
 

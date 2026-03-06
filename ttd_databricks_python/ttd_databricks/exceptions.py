@@ -1,6 +1,6 @@
 """Custom exceptions for the TTD Databricks SDK."""
 
-from typing import List, Optional
+from typing import Optional
 
 
 class TTDError(Exception):
@@ -29,7 +29,7 @@ class TTDConfigurationError(TTDError):
 class TTDSchemaValidationError(TTDError):
     """Raised when DataFrame schema validation fails."""
 
-    def __init__(self, missing_columns: List[str], schema_type: str, endpoint_name: str):
+    def __init__(self, missing_columns: list[str], schema_type: str, endpoint_name: str):
         self.missing_columns = missing_columns
         self.schema_type = schema_type
         self.endpoint_name = endpoint_name

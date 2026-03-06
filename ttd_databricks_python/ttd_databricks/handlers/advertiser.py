@@ -1,4 +1,5 @@
 """API handler for the /data/advertiser endpoint."""
+from ttd_databricks_python.ttd_databricks.contexts import AdvertiserContext
 
 
 def build_items(items_data: list) -> list:
@@ -25,7 +26,7 @@ def build_items(items_data: list) -> list:
     return items
 
 
-def call_api(client, context, items: list, api_token: str) -> list:
+def call_api(client, context: AdvertiserContext, items: list, api_token: str) -> list:
     """Call ingest_advertiser_data. Returns failed_lines (may be empty).
 
     Raises APIError / NoResponseError on unrecoverable errors — caller is

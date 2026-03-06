@@ -29,7 +29,7 @@ class TTDEndpoint(str, Enum):
     def handler_module(self) -> str:
         """Fully-qualified module path for the endpoint-specific handler."""
         return {
-            TTDEndpoint.ADVERTISER:  "ttd_databricks_python.ttd_databricks.handlers.advertiser",
+            TTDEndpoint.ADVERTISER: "ttd_databricks_python.ttd_databricks.handlers.advertiser",
             TTDEndpoint.THIRD_PARTY: "ttd_databricks_python.ttd_databricks.handlers.third_party",
         }[self]
 
@@ -37,6 +37,6 @@ class TTDEndpoint(str, Enum):
     def schema_module(self) -> str:
         """Fully-qualified module path for the endpoint-specific schema definitions."""
         return {
-            TTDEndpoint.ADVERTISER:  "ttd_databricks_python.ttd_databricks.schemas.advertiser",
+            TTDEndpoint.ADVERTISER: "ttd_databricks_python.ttd_databricks.schemas.advertiser",
             TTDEndpoint.THIRD_PARTY: "ttd_databricks_python.ttd_databricks.schemas.third_party",
         }[self]

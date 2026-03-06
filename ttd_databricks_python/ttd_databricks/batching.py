@@ -7,10 +7,12 @@ See the section "Design and Operational Considerations" for information on
 See https://community.databricks.com/t5/data-engineering/using-pyspark-databricks-udfs-with-outside-function-imports/m-p/138556
 for an explanation of why the UDF uses inner imports rather than top-level ones.
 """
+
 import math
 
 import pyspark.sql.functions as F
 from pyspark.sql import DataFrame
+from ttd_databricks_python.ttd_databricks.contexts import TTDContext
 from ttd_databricks_python.ttd_databricks.endpoints import TTDEndpoint
 
 # Per-worker-process DataClient singleton. Each executor runs UDF tasks in a
@@ -63,7 +65,7 @@ def apply_udf_and_explode(batched_df: DataFrame, udf_fn, output_schema, parallel
     ).withColumn("processed_timestamp", F.to_timestamp(F.col("processed_timestamp")))
 
 
-def _build_generic_udf(api_token: str, context, handler_module: str):
+def _build_generic_udf(api_token: str, context: TTDContext, handler_module: str):
     """Build a batch UDF that delegates item-building and API calls to the endpoint handler.
 
     api_token, context, and handler_module are captured in the closure and serialized to
@@ -126,6 +128,6 @@ def _build_generic_udf(api_token: str, context, handler_module: str):
     return call_ttd_api_batch
 
 
-def get_batch_udf(endpoint: TTDEndpoint, api_token: str, context):
+def get_batch_udf(endpoint: TTDEndpoint, api_token: str, context: TTDContext):
     """Return the endpoint-specific batch UDF, ready to apply to a batched DataFrame."""
     return _build_generic_udf(api_token, context, endpoint.handler_module)

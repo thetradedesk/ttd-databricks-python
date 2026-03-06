@@ -1,13 +1,13 @@
 """Main SDK class for submitting Spark DataFrames to TTD API endpoints."""
 
 from datetime import datetime, timezone
-from typing import Optional, Union
+from typing import Optional
 
 # ttd-data is the external SDK for the TTD Data API.
 # Install via: pip install ttd-data
 # DataClient is the main HTTP client. The TTD-Auth token is passed per API call.
 from ttd_data import DataClient
-from ttd_databricks_python.ttd_databricks.contexts import AdvertiserContext, ThirdPartyContext
+from ttd_databricks_python.ttd_databricks.contexts import TTDContext
 from ttd_databricks_python.ttd_databricks.endpoints import TTDEndpoint
 
 
@@ -85,7 +85,7 @@ class TtdDatabricksClient:
     def push_data(
         self,
         df,
-        context: Union[AdvertiserContext, ThirdPartyContext],
+        context: TTDContext,
         batch_size: int = 10,
     ):
         """
@@ -132,7 +132,7 @@ class TtdDatabricksClient:
 
     def batch_process(
         self,
-        context: Union[AdvertiserContext, ThirdPartyContext],
+        context: TTDContext,
         input_table: str,
         output_table: str,
         metadata_table: Optional[str] = None,
@@ -225,7 +225,7 @@ class TtdDatabricksClient:
         spark = self._get_spark()
         table_name = table_name or f"ttd_{endpoint.value}_input"
 
-        # Mandatory TTD columns + updated_at for incremental processing
+        # Mandatory columns + Optional columns + updated_at for incremental processing
         base_schema = get_ttd_input_schema(endpoint)
         full_schema = StructType(
             base_schema.fields + [StructField("updated_at", TimestampType(), True)]
@@ -356,7 +356,7 @@ class TtdDatabricksClient:
                 "Databricks environment or have pyspark available."
             ) from exc
 
-    def _call_api(self, context, rows: list, batch_index: int) -> list:
+    def _call_api(self, context: TTDContext, rows: list, batch_index: int) -> list:
         """Call the endpoint API for a batch of Spark Rows.
 
         Delegates item-building and the API call to the endpoint-specific handler module,
@@ -438,7 +438,7 @@ class TtdDatabricksClient:
                 df = df.withColumn(field.name, F.lit(None).cast(field.dataType))
         return df
 
-    def _get_last_processed_date(self, spark, metadata_table, override):
+    def _get_last_processed_date(self, spark, metadata_table: Optional[str], override: Optional[datetime]) -> Optional[datetime]:
         """Return the last processed date for incremental filtering.
 
         Returns override if provided, otherwise reads the max last_processed_date
@@ -454,9 +454,8 @@ class TtdDatabricksClient:
         except Exception:
             return None
 
-    def _write_metadata(self, spark, metadata_table, records_processed):
+    def _write_metadata(self, spark, metadata_table: str, records_processed: int) -> None:
         """Append a run record to the metadata table."""
-        from datetime import datetime, timezone
         from pyspark.sql import Row
         from ttd_databricks_python.ttd_databricks.schemas import get_metadata_schema
 

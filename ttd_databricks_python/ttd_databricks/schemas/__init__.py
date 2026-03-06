@@ -2,8 +2,6 @@
 
 import importlib
 from enum import Enum
-from typing import List
-
 from ttd_databricks_python.ttd_databricks.endpoints import TTDEndpoint
 
 
@@ -33,12 +31,12 @@ def get_ttd_input_schema(endpoint: TTDEndpoint):
         endpoint: TTDEndpoint enum specifying which endpoint's schema to return.
 
     Returns:
-        pyspark.sql.types.StructType with mandatory columns for the endpoint.
+        pyspark.sql.types.StructType with all columns (mandatory and optional) for the endpoint.
     """
     return importlib.import_module(endpoint.schema_module).input_schema()
 
 
-def get_required_column_names(endpoint: TTDEndpoint) -> List[str]:
+def get_required_column_names(endpoint: TTDEndpoint) -> list[str]:
     """
     Returns the list of required (non-nullable) column names for the given endpoint.
 
