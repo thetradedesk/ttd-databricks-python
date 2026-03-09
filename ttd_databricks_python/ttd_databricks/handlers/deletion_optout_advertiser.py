@@ -35,7 +35,7 @@ def call_api(client: DataClient, context: DeletionOptOutAdvertiserContext, items
         response = client.deletion_opt_out.data_subject_request_advertiser_data(
             ttd_auth=api_token,
             advertiser_id=context.advertiser_id,
-            data_provider_id=context.data_provider_id,
+            data_provider_id=context.data_provider_id if context.data_provider_id is not None else UNSET,
             items=items,
             request_type=context.request_type,
             server_url=context.base_url_override,

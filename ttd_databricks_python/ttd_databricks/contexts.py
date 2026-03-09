@@ -65,15 +65,15 @@ class ThirdPartyContext(TTDContext):
 class DeletionOptOutAdvertiserContext(TTDContext):
     """Typed context for /data/deletion-optout/advertiser endpoint.
 
-    data_provider_id: DataProviderId for API requests.
     advertiser_id: AdvertiserId for API requests.
     request_type: Either "OptOut" or "Deletion".
+    data_provider_id: Optional DataProviderId for API requests. Default None (omitted from request).
     base_url_override: Overrides default base URL. If None, uses endpoint-specific default.
     """
 
-    data_provider_id: str
     advertiser_id: str
     request_type: PartnerDsrRequestType
+    data_provider_id: Optional[str] = None
     endpoint: TTDEndpoint = field(default=TTDEndpoint.DELETION_OPTOUT_ADVERTISER, init=False)
 
 
