@@ -105,3 +105,15 @@ class DeletionOptOutMerchantContext(TTDContext):
     merchant_id: int
     request_type: PartnerDsrRequestType
     endpoint: TTDEndpoint = field(default=TTDEndpoint.DELETION_OPTOUT_MERCHANT, init=False)
+
+
+@dataclass
+class OfflineConversionContext(TTDContext):
+    """Typed context for /providerapi/offlineconversion endpoint.
+
+    data_provider_id: DataProviderId for API requests.
+    base_url_override: Overrides default base URL. If None, uses endpoint-specific default.
+    """
+
+    data_provider_id: str
+    endpoint: TTDEndpoint = field(default=TTDEndpoint.OFFLINE_CONVERSION, init=False)

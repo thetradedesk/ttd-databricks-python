@@ -1,0 +1,109 @@
+"""API handler for the /providerapi/offlineconversion endpoint."""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any, cast
+
+from ttd_databricks_python.ttd_databricks.contexts import OfflineConversionContext
+
+if TYPE_CHECKING:
+    from ttd_data import DataClient
+    from ttd_data.models import OfflineConversionDataItem
+
+# Maps user_ids[].type (lowercase) → string type code used in UserIdArray
+_USER_ID_TYPE_CODE: dict[str, str] = {
+    "tdid": "0",
+    "daid": "1",
+    "uid2": "2",
+    "uid2token": "3",
+    "euid": "4",
+    "euidtoken": "5",
+    "rampid": "6",
+}
+
+
+def build_items(items_data: list[dict[str, Any]]) -> list[OfflineConversionDataItem]:
+    """Convert list of row dicts to OfflineConversionDataItem SDK objects."""
+    from ttd_data.models import (
+        OfflineConversionDataItem,
+        RealTimeConversionEventLineItem,
+        RealTimeConversionEventsPrivacySetting,
+    )
+
+    from ttd_databricks_python.ttd_databricks.schemas.offline_conversion import ITEM_OPTIONAL_FIELDS
+
+    items = []
+    for row in items_data:
+        kwargs: dict[str, Any] = {
+            "tracking_tag_id": row["tracking_tag_id"],
+            "timestamp_utc": row["timestamp_utc"],
+        }
+
+        raw_user_ids = row.get("user_ids")
+        if raw_user_ids:
+            kwargs["user_id_array"] = [
+                [_USER_ID_TYPE_CODE[user_id["type"].lower()], user_id["id"]] for user_id in raw_user_ids
+            ]
+
+        for field in ITEM_OPTIONAL_FIELDS:
+            value = row.get(field)
+            if value is not None:
+                kwargs[field] = value
+
+        raw_line_items = row.get("line_items")
+        if raw_line_items:
+            kwargs["line_items"] = [
+                RealTimeConversionEventLineItem(
+                    **{k: v for k, v in (li if isinstance(li, dict) else li.asDict()).items() if v is not None}
+                )
+                for li in raw_line_items
+            ]
+
+        raw_privacy_settings = row.get("privacy_settings")
+        if raw_privacy_settings:
+            kwargs["privacy_settings"] = [
+                RealTimeConversionEventsPrivacySetting(
+                    **{k: v for k, v in (ps if isinstance(ps, dict) else ps.asDict()).items() if v is not None}
+                )
+                for ps in raw_privacy_settings
+            ]
+
+        items.append(OfflineConversionDataItem(**kwargs))
+    return items
+
+
+def call_api(
+    client: DataClient,
+    context: OfflineConversionContext,
+    items: list[OfflineConversionDataItem],
+    api_token: str,
+) -> list[Any]:
+    """Call ingest_offline_conversion_data. Returns failed_lines (may be empty).
+
+    Raises APIError / NoResponseError on unrecoverable errors — caller is
+    responsible for converting these to the appropriate exception type.
+    """
+    from ttd_data.errors import OfflineConversionDataServerResponseError
+    from ttd_data.types import UNSET
+
+    has_user_id_array = any(item.user_id_array is not UNSET and item.user_id_array is not None for item in items)
+
+    failed_lines: list[Any] = []
+    try:
+        response = client.offline_conversion.ingest_offline_conversion_data(
+            ttd_auth=api_token,
+            data_provider_id=context.data_provider_id,
+            user_id_array_metadata_format=["type", "id"] if has_user_id_array else UNSET,
+            items=items,
+            server_url=context.base_url_override,
+        )
+        server_response = response.offline_conversion_data_server_response
+        if server_response is not None:
+            fl = server_response.failed_lines
+            if fl is not UNSET and fl is not None:
+                failed_lines = cast(list[Any], fl)
+    except OfflineConversionDataServerResponseError as exc:
+        fl = exc.data.failed_lines
+        if fl is not UNSET and fl is not None:
+            failed_lines = cast(list[Any], fl)
+    return failed_lines
