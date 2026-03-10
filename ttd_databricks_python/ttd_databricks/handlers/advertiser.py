@@ -48,7 +48,7 @@ def call_api(client: DataClient, context: AdvertiserContext, items: list[Adverti
         response = client.advertiser.ingest_advertiser_data(
             advertiser_id=context.advertiser_id,
             ttd_auth=api_token,
-            data_provider_id=context.data_provider_id,
+            data_provider_id=context.data_provider_id if context.data_provider_id is not None else UNSET,
             items=items,
             server_url=context.base_url_override,
         )

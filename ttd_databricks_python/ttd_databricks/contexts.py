@@ -37,13 +37,13 @@ class TTDContext(ABC):
 class AdvertiserContext(TTDContext):
     """Typed context for /data/advertiser endpoint.
 
-    data_provider_id: DataProviderId for API requests.
     advertiser_id: AdvertiserId for API requests.
+    data_provider_id: Optional DataProviderId for API requests. Default None (omitted from request).
     base_url_override: Overrides default base URL. If None, uses endpoint-specific default.
     """
 
-    data_provider_id: str
     advertiser_id: str
+    data_provider_id: Optional[str] = None
     endpoint: TTDEndpoint = field(default=TTDEndpoint.ADVERTISER, init=False)
 
 
