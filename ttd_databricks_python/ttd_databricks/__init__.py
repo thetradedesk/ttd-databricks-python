@@ -1,6 +1,13 @@
 """TTD Databricks SDK - public API surface."""
 
-from ttd_databricks_python.ttd_databricks.contexts import TTDContext, AdvertiserContext, ThirdPartyContext
+from ttd_databricks_python.ttd_databricks.contexts import (
+    TTDContext,
+    AdvertiserContext,
+    ThirdPartyContext,
+    DeletionOptOutAdvertiserContext,
+    DeletionOptOutThirdPartyContext,
+    DeletionOptOutMerchantContext,
+)
 from ttd_databricks_python.ttd_databricks.endpoints import TTDEndpoint
 from ttd_databricks_python.ttd_databricks.exceptions import (
     TTDError,
@@ -24,6 +31,9 @@ __all__ = [
     "TTDContext",
     "AdvertiserContext",
     "ThirdPartyContext",
+    "DeletionOptOutAdvertiserContext",
+    "DeletionOptOutThirdPartyContext",
+    "DeletionOptOutMerchantContext",
     # Endpoints
     "TTDEndpoint",
     # Exceptions
