@@ -17,6 +17,7 @@ import pyspark.sql.functions as F
 from pyspark.sql import DataFrame
 from pyspark.sql.types import StructType
 from ttd_data import DataClient
+
 from ttd_databricks_python.ttd_databricks.contexts import TTDContext
 from ttd_databricks_python.ttd_databricks.endpoints import TTDEndpoint
 
@@ -55,11 +56,7 @@ def apply_udf_and_explode(batched_df: DataFrame, udf_fn: Any, output_schema: Str
     """
     from pyspark.sql.types import ArrayType
 
-    api_results_df = (
-        batched_df
-        .repartition(parallelism)
-        .withColumn("_results_json", udf_fn(F.col("_items_json")))
-    )
+    api_results_df = batched_df.repartition(parallelism).withColumn("_results_json", udf_fn(F.col("_items_json")))
 
     exploded_df = api_results_df.withColumn(
         "_result", F.explode(F.from_json(F.col("_results_json"), ArrayType(output_schema)))
@@ -78,14 +75,17 @@ def _build_generic_udf(api_token: str, context: TTDContext, handler_module: str)
     handler module is imported lazily inside the UDF at execution time rather than
     serializing a live module object.
     """
-    @F.udf("string")  # type: ignore[misc]
+
+    @F.udf("string")  # type: ignore[untyped-decorator]
     def call_ttd_api_batch(items_json: Optional[str]) -> Optional[str]:
         import importlib
         import json
         from datetime import datetime, timezone
+
         from ttd_data import DataClient
         from ttd_data.errors import APIError, NoResponseError
         from ttd_data.types import UNSET
+
         from ttd_databricks_python.ttd_databricks.utils import extract_item_number
 
         if items_json is None:

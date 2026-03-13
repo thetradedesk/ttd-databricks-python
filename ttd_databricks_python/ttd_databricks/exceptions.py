@@ -7,6 +7,7 @@ from typing import Optional
 
 class TTDError(Exception):
     """Base exception for all TTD Databricks SDK errors."""
+
     pass
 
 
@@ -18,13 +19,12 @@ class TTDApiError(TTDError):
         self.response_text = response_text
         self.batch_index = batch_index
         status_str = str(status_code) if status_code is not None else "no response"
-        super().__init__(
-            f"TTD API error (HTTP {status_str}) for batch {batch_index}: {response_text}"
-        )
+        super().__init__(f"TTD API error (HTTP {status_str}) for batch {batch_index}: {response_text}")
 
 
 class TTDConfigurationError(TTDError):
     """Raised when the SDK is misconfigured (e.g., missing SparkSession, invalid endpoint)."""
+
     pass
 
 

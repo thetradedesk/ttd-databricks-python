@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any, Optional
 # Install via: pip install ttd-data
 # DataClient is the main HTTP client. The TTD-Auth token is passed per API call.
 from ttd_data import DataClient
+
 from ttd_databricks_python.ttd_databricks.contexts import TTDContext
 from ttd_databricks_python.ttd_databricks.endpoints import TTDEndpoint
 
@@ -107,7 +108,7 @@ class TtdDatabricksClient:
           Contains endpoint-specific config (data_provider_id, advertiser_id, etc.)
         - batch_size: Number of rows per API request. Default 10.
         """
-        from ttd_databricks_python.ttd_databricks.schemas import validate_ttd_schema, get_output_schema
+        from ttd_databricks_python.ttd_databricks.schemas import get_output_schema, validate_ttd_schema
 
         df = self._fill_nullable_columns(df, context.endpoint)
         validate_ttd_schema(df, context.endpoint)
@@ -121,7 +122,7 @@ class TtdDatabricksClient:
             timestamp = datetime.now(timezone.utc)
             api_results = self._call_api(context, batch, batch_index)
 
-            for row, result in zip(batch, api_results):
+            for row, result in zip(batch, api_results, strict=True):
                 merged = row.asDict()
                 merged["success"] = result["success"]
                 merged["error_code"] = result["error_code"]
@@ -165,8 +166,9 @@ class TtdDatabricksClient:
         - parallelism: Number of parallel partitions for API calls. Default 8.
         """
         import pyspark.sql.functions as F
-        from ttd_databricks_python.ttd_databricks.schemas import validate_ttd_schema, get_output_schema
-        from ttd_databricks_python.ttd_databricks.batching import pre_batch_df, get_batch_udf, apply_udf_and_explode
+
+        from ttd_databricks_python.ttd_databricks.batching import apply_udf_and_explode, get_batch_udf, pre_batch_df
+        from ttd_databricks_python.ttd_databricks.schemas import get_output_schema, validate_ttd_schema
 
         spark = self._get_spark()
         df = spark.table(input_table)
@@ -224,7 +226,8 @@ class TtdDatabricksClient:
             raise NotImplementedError("Custom schema is not yet supported in setup_input_table")
 
         from delta.tables import DeltaTable
-        from pyspark.sql.types import StructType, StructField, TimestampType
+        from pyspark.sql.types import StructField, StructType, TimestampType
+
         from ttd_databricks_python.ttd_databricks.schemas import get_ttd_input_schema
 
         spark = self._get_spark()
@@ -232,15 +235,9 @@ class TtdDatabricksClient:
 
         # Mandatory columns + Optional columns + updated_at for incremental processing
         base_schema = get_ttd_input_schema(endpoint)
-        full_schema = StructType(
-            base_schema.fields + [StructField("updated_at", TimestampType(), True)]
-        )
+        full_schema = StructType(base_schema.fields + [StructField("updated_at", TimestampType(), True)])
 
-        builder = (
-            DeltaTable.createIfNotExists(spark)
-            .tableName(table_name)
-            .addColumns(full_schema)
-        )
+        builder = DeltaTable.createIfNotExists(spark).tableName(table_name).addColumns(full_schema)
         if location:
             builder = builder.location(location)
         builder.execute()
@@ -272,24 +269,19 @@ class TtdDatabricksClient:
             raise NotImplementedError("Custom input_schema is not yet supported in setup_output_table")
 
         from delta.tables import DeltaTable
-        from pyspark.sql.types import StructType, StructField, TimestampType
-        from ttd_databricks_python.ttd_databricks.schemas import get_ttd_input_schema, get_output_schema
+        from pyspark.sql.types import StructField, StructType, TimestampType
+
+        from ttd_databricks_python.ttd_databricks.schemas import get_output_schema, get_ttd_input_schema
 
         spark = self._get_spark()
         table_name = table_name or f"ttd_{endpoint.value}_output"
 
         # Mirror the input table schema (TTD columns + updated_at), then append status columns
         base_schema = get_ttd_input_schema(endpoint)
-        base_with_updated_at = StructType(
-            base_schema.fields + [StructField("updated_at", TimestampType(), True)]
-        )
+        base_with_updated_at = StructType(base_schema.fields + [StructField("updated_at", TimestampType(), True)])
         full_schema = get_output_schema(base_with_updated_at)
 
-        builder = (
-            DeltaTable.createIfNotExists(spark)
-            .tableName(table_name)
-            .addColumns(full_schema)
-        )
+        builder = DeltaTable.createIfNotExists(spark).tableName(table_name).addColumns(full_schema)
         if location:
             builder = builder.location(location)
         builder.execute()
@@ -315,16 +307,13 @@ class TtdDatabricksClient:
         Returns: The table name used (either provided or the generated default).
         """
         from delta.tables import DeltaTable
+
         from ttd_databricks_python.ttd_databricks.schemas import get_metadata_schema
 
         spark = self._get_spark()
         table_name = table_name or "ttd_metadata"
 
-        builder = (
-            DeltaTable.createIfNotExists(spark)
-            .tableName(table_name)
-            .addColumns(get_metadata_schema())
-        )
+        builder = DeltaTable.createIfNotExists(spark).tableName(table_name).addColumns(get_metadata_schema())
         if location:
             builder = builder.location(location)
         builder.execute()
@@ -345,6 +334,7 @@ class TtdDatabricksClient:
             return self._spark
         try:
             from pyspark.sql import SparkSession
+
             from ttd_databricks_python.ttd_databricks.exceptions import TTDConfigurationError
 
             spark = SparkSession.getActiveSession()
@@ -375,8 +365,10 @@ class TtdDatabricksClient:
             TTDApiError: On unrecoverable HTTP errors (403, 413, 5xx, etc.).
         """
         import importlib
+
         from ttd_data.errors import APIError, NoResponseError
         from ttd_data.types import UNSET
+
         from ttd_databricks_python.ttd_databricks.exceptions import TTDApiError
         from ttd_databricks_python.ttd_databricks.utils import extract_item_number
 
@@ -416,11 +408,13 @@ class TtdDatabricksClient:
         results: list[dict[str, Any]] = []
         for i, _ in enumerate(rows, start=1):
             if i in failed_item_mapping:
-                results.append({
-                    "success": False,
-                    "error_code": failed_item_mapping[i]["error_code"],
-                    "error_message": failed_item_mapping[i]["error_message"],
-                })
+                results.append(
+                    {
+                        "success": False,
+                        "error_code": failed_item_mapping[i]["error_code"],
+                        "error_message": failed_item_mapping[i]["error_message"],
+                    }
+                )
             else:
                 results.append({"success": True, "error_code": None, "error_message": None})
 
@@ -435,6 +429,7 @@ class TtdDatabricksClient:
         Columns already present in the DataFrame are left untouched.
         """
         from pyspark.sql import functions as F
+
         from ttd_databricks_python.ttd_databricks.schemas import get_ttd_input_schema
 
         existing = set(df.schema.fieldNames())
@@ -443,7 +438,12 @@ class TtdDatabricksClient:
                 df = df.withColumn(field.name, F.lit(None).cast(field.dataType))
         return df
 
-    def _get_last_processed_date(self, spark: SparkSession, metadata_table: Optional[str], override: Optional[datetime]) -> Optional[datetime]:
+    def _get_last_processed_date(
+        self,
+        spark: SparkSession,
+        metadata_table: Optional[str],
+        override: Optional[datetime],
+    ) -> Optional[datetime]:
         """Return the last processed date for incremental filtering.
 
         Returns override if provided, otherwise reads the max last_processed_date
@@ -455,7 +455,10 @@ class TtdDatabricksClient:
             return None
         try:
             import pyspark.sql.functions as F
-            last_processed_date: Optional[datetime] = spark.table(metadata_table).agg(F.max("last_processed_date")).collect()[0][0]
+
+            last_processed_date: Optional[datetime] = (
+                spark.table(metadata_table).agg(F.max("last_processed_date")).collect()[0][0]
+            )
             return last_processed_date
         except Exception:
             return None
@@ -463,6 +466,7 @@ class TtdDatabricksClient:
     def _write_metadata(self, spark: SparkSession, metadata_table: str, records_processed: int) -> None:
         """Append a run record to the metadata table."""
         from pyspark.sql import Row
+
         from ttd_databricks_python.ttd_databricks.schemas import get_metadata_schema
 
         now = datetime.now(timezone.utc)

@@ -101,7 +101,7 @@ def get_output_schema(input_schema: StructType) -> StructType:
         success (boolean), error_code (string), error_message (string),
         processed_timestamp (timestamp).
     """
-    from pyspark.sql.types import StructType, StructField, StringType, BooleanType, TimestampType
+    from pyspark.sql.types import BooleanType, StringType, StructField, StructType, TimestampType
 
     type_map = {
         "boolean": BooleanType(),
@@ -119,10 +119,12 @@ def get_metadata_schema() -> StructType:
     Columns: last_processed_date (timestamp), run_timestamp (timestamp),
              records_processed (long).
     """
-    from pyspark.sql.types import StructType, StructField, TimestampType, LongType
+    from pyspark.sql.types import LongType, StructField, StructType, TimestampType
 
-    return StructType([
-        StructField("last_processed_date", TimestampType(), True),
-        StructField("run_timestamp", TimestampType(), True),
-        StructField("records_processed", LongType(), True),
-    ])
+    return StructType(
+        [
+            StructField("last_processed_date", TimestampType(), True),
+            StructField("run_timestamp", TimestampType(), True),
+            StructField("records_processed", LongType(), True),
+        ]
+    )

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from ttd_databricks_python.ttd_databricks.contexts import ThirdPartyContext
 
@@ -13,7 +13,8 @@ if TYPE_CHECKING:
 
 def build_items(items_data: list[dict[str, Any]]) -> list[ThirdPartyDataItem]:
     """Convert list of row dicts to ThirdPartyDataItem SDK objects."""
-    from ttd_data.models import ThirdPartyDataItem, ThirdPartyData
+    from ttd_data.models import ThirdPartyData, ThirdPartyDataItem
+
     from ttd_databricks_python.ttd_databricks.schemas.third_party import DATA_OPTIONAL_FIELDS, ITEM_OPTIONAL_FIELDS
 
     items = []
@@ -35,7 +36,12 @@ def build_items(items_data: list[dict[str, Any]]) -> list[ThirdPartyDataItem]:
     return items
 
 
-def call_api(client: DataClient, context: ThirdPartyContext, items: list[ThirdPartyDataItem], api_token: str) -> list[Any]:
+def call_api(
+    client: DataClient,
+    context: ThirdPartyContext,
+    items: list[ThirdPartyDataItem],
+    api_token: str,
+) -> list[Any]:
     """Call ingest_third_party_data. Returns failed_lines (may be empty).
 
     Raises APIError / NoResponseError on unrecoverable errors — caller is
@@ -43,7 +49,8 @@ def call_api(client: DataClient, context: ThirdPartyContext, items: list[ThirdPa
     """
     from ttd_data.errors import ThirdPartyDataServerResponseError
     from ttd_data.types import UNSET
-    failed_lines = []
+
+    failed_lines: list[Any] = []
     try:
         response = client.third_party.ingest_third_party_data(
             ttd_auth=api_token,
@@ -56,9 +63,9 @@ def call_api(client: DataClient, context: ThirdPartyContext, items: list[ThirdPa
         if server_response is not None:
             fl = server_response.failed_lines
             if fl is not UNSET and fl is not None:
-                failed_lines = fl
+                failed_lines = cast(list[Any], fl)
     except ThirdPartyDataServerResponseError as exc:
         fl = exc.data.failed_lines
         if fl is not UNSET and fl is not None:
-            failed_lines = fl
+            failed_lines = cast(list[Any], fl)
     return failed_lines
