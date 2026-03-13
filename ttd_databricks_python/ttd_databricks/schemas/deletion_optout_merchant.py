@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from pyspark.sql.types import StructType
 
+
 def input_schema() -> StructType:
     """
     Schema for the /data/deletion-optout/merchant endpoint input table.
@@ -20,10 +21,12 @@ def input_schema() -> StructType:
                  euid, euid_token, id5, net_id, first_id, merkury_id, iqvia_ppid.
       id_value → the identifier value for the given id_type.
     """
-    from pyspark.sql.types import StructType, StructField, StringType
+    from pyspark.sql.types import StringType, StructField, StructType
 
-    return StructType([
-        # Mandatory
-        StructField("id_type", StringType(), False),
-        StructField("id_value", StringType(), False),
-    ])
+    return StructType(
+        [
+            # Mandatory
+            StructField("id_type", StringType(), False),
+            StructField("id_value", StringType(), False),
+        ]
+    )

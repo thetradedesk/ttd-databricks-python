@@ -8,15 +8,22 @@ if TYPE_CHECKING:
     from pyspark.sql.types import StructType
 
 # Fields passed to AdvertiserData
-DATA_OPTIONAL_FIELDS: frozenset[str] = frozenset({
-    "timestamp_utc", "ttl_in_minutes", "base_bid_cpm",
-    "base_bid_cpm_metadata", "bid_factor",
-})
+DATA_OPTIONAL_FIELDS: frozenset[str] = frozenset(
+    {
+        "timestamp_utc",
+        "ttl_in_minutes",
+        "base_bid_cpm",
+        "base_bid_cpm_metadata",
+        "bid_factor",
+    }
+)
 
 # Fields passed to AdvertiserDataItem
-ITEM_OPTIONAL_FIELDS: frozenset[str] = frozenset({
-    "cookie_mapping_partner_id",
-})
+ITEM_OPTIONAL_FIELDS: frozenset[str] = frozenset(
+    {
+        "cookie_mapping_partner_id",
+    }
+)
 
 
 def input_schema() -> StructType:
@@ -41,19 +48,26 @@ def input_schema() -> StructType:
       bid_factor                → AdvertiserData.BidFactor
     """
     from pyspark.sql.types import (
-        StructType, StructField,
-        StringType, TimestampType, IntegerType, DoubleType,
+        DoubleType,
+        IntegerType,
+        StringType,
+        StructField,
+        StructType,
+        TimestampType,
     )
-    return StructType([
-        # Mandatory
-        StructField("id_type", StringType(), False),
-        StructField("id_value", StringType(), False),
-        StructField("segment_name", StringType(), False),
-        # Optional
-        StructField("cookie_mapping_partner_id", StringType(), True),
-        StructField("timestamp_utc", TimestampType(), True),
-        StructField("ttl_in_minutes", IntegerType(), True),
-        StructField("base_bid_cpm", DoubleType(), True),
-        StructField("base_bid_cpm_metadata", StringType(), True),
-        StructField("bid_factor", DoubleType(), True),
-    ])
+
+    return StructType(
+        [
+            # Mandatory
+            StructField("id_type", StringType(), False),
+            StructField("id_value", StringType(), False),
+            StructField("segment_name", StringType(), False),
+            # Optional
+            StructField("cookie_mapping_partner_id", StringType(), True),
+            StructField("timestamp_utc", TimestampType(), True),
+            StructField("ttl_in_minutes", IntegerType(), True),
+            StructField("base_bid_cpm", DoubleType(), True),
+            StructField("base_bid_cpm_metadata", StringType(), True),
+            StructField("bid_factor", DoubleType(), True),
+        ]
+    )

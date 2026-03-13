@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from ttd_databricks_python.ttd_databricks.contexts import DeletionOptOutMerchantContext
 
@@ -21,7 +21,12 @@ def build_items(items_data: list[dict[str, Any]]) -> list[PartnerDsrDataItem]:
     return items
 
 
-def call_api(client: DataClient, context: DeletionOptOutMerchantContext, items: list[PartnerDsrDataItem], api_token: str) -> list[Any]:
+def call_api(
+    client: DataClient,
+    context: DeletionOptOutMerchantContext,
+    items: list[PartnerDsrDataItem],
+    api_token: str,
+) -> list[Any]:
     """Call data_subject_request_merchant_data. Returns failed_lines (may be empty).
 
     Raises APIError / NoResponseError on unrecoverable errors — caller is
@@ -30,7 +35,7 @@ def call_api(client: DataClient, context: DeletionOptOutMerchantContext, items: 
     from ttd_data.errors import MerchantDsrResponseError
     from ttd_data.types import UNSET
 
-    failed_lines = []
+    failed_lines: list[Any] = []
     try:
         response = client.deletion_opt_out.data_subject_request_merchant_data(
             ttd_auth=api_token,
@@ -43,9 +48,9 @@ def call_api(client: DataClient, context: DeletionOptOutMerchantContext, items: 
         if server_response is not None:
             fl = server_response.failed_lines
             if fl is not UNSET and fl is not None:
-                failed_lines = fl
+                failed_lines = cast(list[Any], fl)
     except MerchantDsrResponseError as exc:
         fl = exc.data.failed_lines
         if fl is not UNSET and fl is not None:
-            failed_lines = fl
+            failed_lines = cast(list[Any], fl)
     return failed_lines

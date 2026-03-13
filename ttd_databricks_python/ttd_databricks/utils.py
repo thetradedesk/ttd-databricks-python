@@ -1,4 +1,5 @@
 """Shared utility functions for the TTD Databricks SDK."""
+
 from __future__ import annotations
 
 import re

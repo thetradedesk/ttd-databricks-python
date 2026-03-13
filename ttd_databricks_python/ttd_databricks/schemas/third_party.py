@@ -8,14 +8,19 @@ if TYPE_CHECKING:
     from pyspark.sql.types import StructType
 
 # Fields passed to ThirdPartyData
-DATA_OPTIONAL_FIELDS: frozenset[str] = frozenset({
-    "timestamp_utc", "ttl_in_minutes",
-})
+DATA_OPTIONAL_FIELDS: frozenset[str] = frozenset(
+    {
+        "timestamp_utc",
+        "ttl_in_minutes",
+    }
+)
 
 # Fields passed to ThirdPartyDataItem
-ITEM_OPTIONAL_FIELDS: frozenset[str] = frozenset({
-    "cookie_mapping_partner_id",
-})
+ITEM_OPTIONAL_FIELDS: frozenset[str] = frozenset(
+    {
+        "cookie_mapping_partner_id",
+    }
+)
 
 
 def input_schema() -> StructType:
@@ -37,16 +42,22 @@ def input_schema() -> StructType:
       ttl_in_minutes            → ThirdPartyData.TtlInMinutes
     """
     from pyspark.sql.types import (
-        StructType, StructField,
-        StringType, TimestampType, IntegerType,
+        IntegerType,
+        StringType,
+        StructField,
+        StructType,
+        TimestampType,
     )
-    return StructType([
-        # Mandatory
-        StructField("id_type", StringType(), False),
-        StructField("id_value", StringType(), False),
-        StructField("segment_name", StringType(), False),
-        # Optional
-        StructField("cookie_mapping_partner_id", StringType(), True),
-        StructField("timestamp_utc", TimestampType(), True),
-        StructField("ttl_in_minutes", IntegerType(), True),
-    ])
+
+    return StructType(
+        [
+            # Mandatory
+            StructField("id_type", StringType(), False),
+            StructField("id_value", StringType(), False),
+            StructField("segment_name", StringType(), False),
+            # Optional
+            StructField("cookie_mapping_partner_id", StringType(), True),
+            StructField("timestamp_utc", TimestampType(), True),
+            StructField("ttl_in_minutes", IntegerType(), True),
+        ]
+    )

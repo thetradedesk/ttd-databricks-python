@@ -42,9 +42,15 @@ class TTDEndpoint(str, Enum):
         return {
             TTDEndpoint.ADVERTISER: "ttd_databricks_python.ttd_databricks.handlers.advertiser",
             TTDEndpoint.THIRD_PARTY: "ttd_databricks_python.ttd_databricks.handlers.third_party",
-            TTDEndpoint.DELETION_OPTOUT_ADVERTISER: "ttd_databricks_python.ttd_databricks.handlers.deletion_optout_advertiser",
-            TTDEndpoint.DELETION_OPTOUT_THIRDPARTY: "ttd_databricks_python.ttd_databricks.handlers.deletion_optout_thirdparty",
-            TTDEndpoint.DELETION_OPTOUT_MERCHANT: "ttd_databricks_python.ttd_databricks.handlers.deletion_optout_merchant",
+            TTDEndpoint.DELETION_OPTOUT_ADVERTISER: (
+                "ttd_databricks_python.ttd_databricks.handlers.deletion_optout_advertiser"
+            ),
+            TTDEndpoint.DELETION_OPTOUT_THIRDPARTY: (
+                "ttd_databricks_python.ttd_databricks.handlers.deletion_optout_thirdparty"
+            ),
+            TTDEndpoint.DELETION_OPTOUT_MERCHANT: (
+                "ttd_databricks_python.ttd_databricks.handlers.deletion_optout_merchant"
+            ),
         }[self]
 
     @property
@@ -53,7 +59,13 @@ class TTDEndpoint(str, Enum):
         return {
             TTDEndpoint.ADVERTISER: "ttd_databricks_python.ttd_databricks.schemas.advertiser",
             TTDEndpoint.THIRD_PARTY: "ttd_databricks_python.ttd_databricks.schemas.third_party",
-            TTDEndpoint.DELETION_OPTOUT_ADVERTISER: "ttd_databricks_python.ttd_databricks.schemas.deletion_optout_advertiser",
-            TTDEndpoint.DELETION_OPTOUT_THIRDPARTY: "ttd_databricks_python.ttd_databricks.schemas.deletion_optout_thirdparty",
-            TTDEndpoint.DELETION_OPTOUT_MERCHANT: "ttd_databricks_python.ttd_databricks.schemas.deletion_optout_merchant",
+            TTDEndpoint.DELETION_OPTOUT_ADVERTISER: (
+                "ttd_databricks_python.ttd_databricks.schemas.deletion_optout_advertiser"
+            ),
+            TTDEndpoint.DELETION_OPTOUT_THIRDPARTY: (
+                "ttd_databricks_python.ttd_databricks.schemas.deletion_optout_thirdparty"
+            ),
+            TTDEndpoint.DELETION_OPTOUT_MERCHANT: (
+                "ttd_databricks_python.ttd_databricks.schemas.deletion_optout_merchant"
+            ),
         }[self]
