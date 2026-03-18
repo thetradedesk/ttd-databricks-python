@@ -13,6 +13,7 @@ class TTDEndpoint(str, Enum):
     DELETION_OPTOUT_ADVERTISER = "deletion_optout_advertiser"
     DELETION_OPTOUT_THIRDPARTY = "deletion_optout_thirdparty"
     DELETION_OPTOUT_MERCHANT = "deletion_optout_merchant"
+    OFFLINE_CONVERSION = "offlineconversion"
 
     @property
     def path(self) -> str:
@@ -23,6 +24,7 @@ class TTDEndpoint(str, Enum):
             TTDEndpoint.DELETION_OPTOUT_ADVERTISER: "/data/deletion-optout/advertiser",
             TTDEndpoint.DELETION_OPTOUT_THIRDPARTY: "/data/deletion-optout/thirdparty",
             TTDEndpoint.DELETION_OPTOUT_MERCHANT: "/data/deletion-optout/merchant",
+            TTDEndpoint.OFFLINE_CONVERSION: "/providerapi/offlineconversion",
         }[self]
 
     @property
@@ -34,6 +36,7 @@ class TTDEndpoint(str, Enum):
             TTDEndpoint.DELETION_OPTOUT_ADVERTISER: "Deletion/Opt-Out Advertiser",
             TTDEndpoint.DELETION_OPTOUT_THIRDPARTY: "Deletion/Opt-Out Third Party",
             TTDEndpoint.DELETION_OPTOUT_MERCHANT: "Deletion/Opt-Out Merchant",
+            TTDEndpoint.OFFLINE_CONVERSION: "Offline Conversion",
         }[self]
 
     @property
@@ -51,6 +54,7 @@ class TTDEndpoint(str, Enum):
             TTDEndpoint.DELETION_OPTOUT_MERCHANT: (
                 "ttd_databricks_python.ttd_databricks.handlers.deletion_optout_merchant"
             ),
+            TTDEndpoint.OFFLINE_CONVERSION: ("ttd_databricks_python.ttd_databricks.handlers.offline_conversion"),
         }[self]
 
     @property
@@ -68,4 +72,5 @@ class TTDEndpoint(str, Enum):
             TTDEndpoint.DELETION_OPTOUT_MERCHANT: (
                 "ttd_databricks_python.ttd_databricks.schemas.deletion_optout_merchant"
             ),
+            TTDEndpoint.OFFLINE_CONVERSION: ("ttd_databricks_python.ttd_databricks.schemas.offline_conversion"),
         }[self]

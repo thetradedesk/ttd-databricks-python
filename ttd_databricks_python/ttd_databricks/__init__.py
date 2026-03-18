@@ -5,6 +5,7 @@ from ttd_databricks_python.ttd_databricks.contexts import (
     DeletionOptOutAdvertiserContext,
     DeletionOptOutMerchantContext,
     DeletionOptOutThirdPartyContext,
+    OfflineConversionContext,
     ThirdPartyContext,
     TTDContext,
 )
@@ -34,6 +35,7 @@ __all__ = [
     "DeletionOptOutAdvertiserContext",
     "DeletionOptOutThirdPartyContext",
     "DeletionOptOutMerchantContext",
+    "OfflineConversionContext",
     # Endpoints
     "TTDEndpoint",
     # Exceptions
