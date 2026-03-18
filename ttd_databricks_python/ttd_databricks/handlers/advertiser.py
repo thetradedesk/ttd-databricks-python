@@ -48,7 +48,10 @@ def call_api(
     responsible for converting these to the appropriate exception type.
     """
     from ttd_data.errors import AdvertiserDataServerResponseError
+    from ttd_data.models import DataOrigin, DataOriginType
     from ttd_data.types import UNSET
+
+    data_origins = (context.data_origins or []) + [DataOrigin(id="ttd_databricks_sdk", type=DataOriginType.INTEGRATION)]
 
     failed_lines: list[Any] = []
     try:
@@ -57,6 +60,7 @@ def call_api(
             ttd_auth=api_token,
             data_provider_id=context.data_provider_id if context.data_provider_id is not None else UNSET,
             items=items,
+            data_origins=data_origins,
             server_url=context.base_url_override,
         )
         server_response = response.advertiser_data_server_response

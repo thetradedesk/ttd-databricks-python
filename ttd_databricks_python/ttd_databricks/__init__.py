@@ -1,5 +1,7 @@
 """TTD Databricks SDK - public API surface."""
 
+from ttd_data.models import DataOrigin, DataOriginType
+
 from ttd_databricks_python.ttd_databricks.contexts import (
     AdvertiserContext,
     DeletionOptOutAdvertiserContext,
@@ -28,6 +30,9 @@ from ttd_databricks_python.ttd_databricks.ttd_client import TtdDatabricksClient
 __all__ = [
     # Client
     "TtdDatabricksClient",
+    # DataOrigins
+    "DataOrigin",
+    "DataOriginType",
     # Contexts
     "TTDContext",
     "AdvertiserContext",

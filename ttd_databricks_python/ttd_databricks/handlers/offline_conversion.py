@@ -84,7 +84,10 @@ def call_api(
     responsible for converting these to the appropriate exception type.
     """
     from ttd_data.errors import OfflineConversionDataServerResponseError
+    from ttd_data.models import DataOrigin, DataOriginType
     from ttd_data.types import UNSET
+
+    data_origins = (context.data_origins or []) + [DataOrigin(id="ttd_databricks_sdk", type=DataOriginType.INTEGRATION)]
 
     has_user_id_array = any(item.user_id_array is not UNSET and item.user_id_array is not None for item in items)
 
@@ -95,6 +98,7 @@ def call_api(
             data_provider_id=context.data_provider_id,
             user_id_array_metadata_format=["type", "id"] if has_user_id_array else UNSET,
             items=items,
+            data_origins=data_origins,
             server_url=context.base_url_override,
         )
         server_response = response.offline_conversion_data_server_response
