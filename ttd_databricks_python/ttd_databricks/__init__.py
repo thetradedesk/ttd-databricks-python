@@ -2,6 +2,7 @@
 
 from ttd_data.models import DataOrigin, DataOriginType
 
+from ttd_databricks_python.ttd_databricks.constants import TTD_DATABRICKS_SDK_ORIGIN_ID
 from ttd_databricks_python.ttd_databricks.contexts import (
     AdvertiserContext,
     DeletionOptOutAdvertiserContext,
@@ -33,6 +34,7 @@ __all__ = [
     # DataOrigins
     "DataOrigin",
     "DataOriginType",
+    "TTD_DATABRICKS_SDK_ORIGIN_ID",
     # Contexts
     "TTDContext",
     "AdvertiserContext",

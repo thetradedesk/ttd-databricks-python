@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, cast
 
+from ttd_databricks_python.ttd_databricks.constants import TTD_DATABRICKS_SDK_ORIGIN_ID
 from ttd_databricks_python.ttd_databricks.contexts import AdvertiserContext
 
 if TYPE_CHECKING:
@@ -51,7 +52,8 @@ def call_api(
     from ttd_data.models import DataOrigin, DataOriginType
     from ttd_data.types import UNSET
 
-    data_origins = (context.data_origins or []) + [DataOrigin(id="ttd_databricks_sdk", type=DataOriginType.INTEGRATION)]
+    sdk_origin = DataOrigin(id=TTD_DATABRICKS_SDK_ORIGIN_ID, type=DataOriginType.INTEGRATION)
+    data_origins = (context.data_origins or []) + [sdk_origin]
 
     failed_lines: list[Any] = []
     try:

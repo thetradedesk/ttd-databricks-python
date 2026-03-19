@@ -1,6 +1,10 @@
 # ttd-databricks
 
-Python SDK for submitting Spark DataFrames to The Trade Desk Data API endpoints from Databricks. Supports both ad hoc and incremental batch processing with built-in schema validation and per-row error tracking.
+Python SDK for integrating Databricks with The Trade Desk Data API. Supports First Party Data, Third Party Data, Offline Conversion Data, and Deletion/Opt-Out workflows.
+
+- **Ad hoc mode** — push a DataFrame directly and receive per-row results inline
+- **Batch mode** — run incremental pipelines backed by Delta tables with processing checkpoints
+- Built-in schema validation and per-row error tracking
 
 ## Table of Contents
 
@@ -73,7 +77,7 @@ input_table = client.setup_input_table(endpoint=TTDEndpoint.ADVERTISER)
 # (success, error_code, error_message, processed_timestamp).
 output_table = client.setup_output_table(endpoint=TTDEndpoint.ADVERTISER)
 
-# Metadata table: tracks the last successful run timestamp for incremental processing.
+# Metadata table: tracks run history (last_processed_date, run_timestamp, records_processed).
 metadata_table = client.setup_metadata_table()
 ```
 
@@ -101,7 +105,6 @@ Use this to process a DataFrame directly and receive results inline.
 from ttd_databricks_python.ttd_databricks import (
     TtdDatabricksClient,
     AdvertiserContext,
-    TTDEndpoint,
 )
 
 # Create the client using your TTD auth token.
@@ -129,14 +132,11 @@ result_df = client.push_data(
 
 ### Batch Processing Mode (`batch_process`)
 
-Use this for incremental, distributed processing backed by Delta tables. Supports checkpoint-based filtering to process only new records.
+Use this for incremental, distributed processing backed by Delta tables. Supports incremental filtering to process only records added since the last run.
 
 ```python
-# Create managed Delta tables for input, output, and processing metadata.
-# These are idempotent — safe to call on every run.
-input_table = client.setup_input_table(endpoint=TTDEndpoint.ADVERTISER)
-output_table = client.setup_output_table(endpoint=TTDEndpoint.ADVERTISER)
-metadata_table = client.setup_metadata_table()  # tracks last processed timestamp
+# Tables set up during Initial Setup (see above).
+# input_table, output_table, metadata_table already created.
 
 # Run the batch pipeline. With process_new_records_only=True, only rows
 # added since the last successful run (tracked via metadata_table) are sent.
@@ -151,6 +151,21 @@ client.batch_process(
 )
 ```
 
+To reprocess from a specific date (e.g. for a backfill), use `last_processed_date_override` to override the last processed date stored in the metadata table:
+
+```python
+from datetime import datetime
+
+client.batch_process(
+    context=context,
+    input_table=input_table,
+    output_table=output_table,
+    metadata_table=metadata_table,
+    process_new_records_only=True,
+    last_processed_date_override=datetime(2025, 1, 1),  # reprocess from this date
+)
+```
+
 ---
 
 ## Authentication
@@ -160,10 +175,11 @@ All API calls require a TTD auth token passed at client creation time.
 ### Factory Method (recommended for notebooks)
 
 ```python
+# spark is the SparkSession available in the Databricks notebook runtime.
 client = TtdDatabricksClient.from_params(
     api_token="<ttd-auth-token>",  # your TTD platform API token
     spark=spark,                   # optional; auto-detected from Databricks context
-    server_url=None,               # optional; see Server Selection
+    # server_url="https://..."      # optional; see Server Selection
 )
 ```
 
@@ -181,7 +197,7 @@ data_client = DataClient()
 client = TtdDatabricksClient(
     data_api_client=data_client,
     api_token="<ttd-auth-token>",
-    spark=spark,  # optional
+    spark=spark,  # optional; spark variable available from the Databricks notebook runtime
 )
 ```
 
@@ -191,7 +207,7 @@ client = TtdDatabricksClient(
 
 Each endpoint is represented by a context dataclass that configures the API call.
 
-### Advertiser — `/data/advertiser`
+### First-Party Data — `/data/advertiser`
 
 ```python
 from ttd_databricks_python.ttd_databricks import AdvertiserContext
@@ -204,11 +220,11 @@ context = AdvertiserContext(
 )
 ```
 
-Required input columns: `id_type`, `id_value`, `segment_name`
+See [schema](#inspecting-schemas) for required and optional columns — `TTDEndpoint.ADVERTISER`
 
 ---
 
-### Third Party — `/data/thirdparty`
+### Third-Party Data — `/data/thirdparty`
 
 ```python
 from ttd_databricks_python.ttd_databricks import ThirdPartyContext
@@ -221,7 +237,7 @@ context = ThirdPartyContext(
 )
 ```
 
-Required input columns: `id_type`, `id_value`, `segment_name`
+See [schema](#inspecting-schemas) for required and optional columns — `TTDEndpoint.THIRD_PARTY`
 
 ---
 
@@ -236,48 +252,69 @@ context = OfflineConversionContext(
 )
 ```
 
-Required input columns: `tracking_tag_id`, `timestamp_utc`
+See [schema](#inspecting-schemas) for required and optional columns — `TTDEndpoint.OFFLINE_CONVERSION`
 
 ---
 
-### Deletion / Opt-Out
+### Deletion / Opt-Out — Advertiser — `/data/deletion-optout/advertiser`
 
-Three endpoints are supported for DSR (Data Subject Request) workflows:
+Deletion/Opt-Out endpoint scoped to a specific advertiser.
 
 ```python
-from ttd_databricks_python.ttd_databricks import (
-    DeletionOptOutAdvertiserContext,
-    DeletionOptOutThirdPartyContext,
-    DeletionOptOutMerchantContext,
-    PartnerDsrRequestType,
-)
+from ttd_databricks_python.ttd_databricks import DeletionOptOutAdvertiserContext, PartnerDsrRequestType
 
-# Use DELETION to remove user data, or OPT_OUT to suppress future targeting.
-
-# Scoped to a specific advertiser
+# request_type controls the action:
+#   PartnerDsrRequestType.DELETION  — remove user data
+#   PartnerDsrRequestType.OPT_OUT   — suppress future targeting
 context = DeletionOptOutAdvertiserContext(
     advertiser_id="<advertiser-id>",
-    request_type=PartnerDsrRequestType.DELETION,
-)
-
-# Scoped to a third-party data provider
-context = DeletionOptOutThirdPartyContext(
-    data_provider_id="<data-provider-id>",
-    request_type=PartnerDsrRequestType.DELETION,
-)
-
-# Scoped to a merchant
-context = DeletionOptOutMerchantContext(
-    merchant_id=12345,
-    request_type=PartnerDsrRequestType.DELETION,
+    request_type=PartnerDsrRequestType.DELETION,  # or OPT_OUT
+    data_provider_id="<data-provider-id>",        # optional
 )
 ```
 
-Required input columns for all deletion/opt-out endpoints: `id_type`, `id_value`
+See [schema](#inspecting-schemas) for required and optional columns — `TTDEndpoint.DELETION_OPTOUT_ADVERTISER`
+
+---
+
+### Deletion / Opt-Out — Third Party — `/data/deletion-optout/thirdparty`
+
+Deletion/Opt-Out endpoint scoped to a third-party data provider.
+
+```python
+from ttd_databricks_python.ttd_databricks import DeletionOptOutThirdPartyContext, PartnerDsrRequestType
+
+context = DeletionOptOutThirdPartyContext(
+    data_provider_id="<data-provider-id>",
+    request_type=PartnerDsrRequestType.DELETION,  # or OPT_OUT
+    brand_id="<brand-id>",                        # optional
+)
+```
+
+See [schema](#inspecting-schemas) for required and optional columns — `TTDEndpoint.DELETION_OPTOUT_THIRDPARTY`
+
+---
+
+### Deletion / Opt-Out — Merchant — `/data/deletion-optout/merchant`
+
+Deletion/Opt-Out endpoint scoped to a merchant.
+
+```python
+from ttd_databricks_python.ttd_databricks import DeletionOptOutMerchantContext, PartnerDsrRequestType
+
+context = DeletionOptOutMerchantContext(
+    merchant_id="<merchant-id>",
+    request_type=PartnerDsrRequestType.DELETION,  # or OPT_OUT
+)
+```
+
+See [schema](#inspecting-schemas) for required and optional columns — `TTDEndpoint.DELETION_OPTOUT_MERCHANT`
 
 ---
 
 ### Inspecting Schemas
+
+Retrieve the full input schema for an endpoint:
 
 ```python
 from ttd_databricks_python.ttd_databricks import TTDEndpoint
@@ -285,6 +322,24 @@ from ttd_databricks_python.ttd_databricks.schemas import get_ttd_input_schema
 
 schema = get_ttd_input_schema(TTDEndpoint.ADVERTISER)
 schema.printTreeString()
+```
+
+Get just the required column names (useful for DataFrame preparation):
+
+```python
+from ttd_databricks_python.ttd_databricks.schemas import get_required_column_names
+
+required_cols = get_required_column_names(TTDEndpoint.ADVERTISER)
+# e.g. ["id_type", "id_value", "segment_name"]
+```
+
+Pre-validate a DataFrame before calling `push_data` to catch schema issues early:
+
+```python
+from ttd_databricks_python.ttd_databricks.schemas import validate_ttd_schema
+
+# Raises TTDSchemaValidationError if any required columns are missing.
+validate_ttd_schema(df=input_df, endpoint=TTDEndpoint.ADVERTISER)
 ```
 
 ---
@@ -323,9 +378,22 @@ For `push_data`, row-level errors are also captured inline in the result DataFra
 
 ## Server Selection
 
-The default server is `https://usw-data.adsrvr.org`. You can override it globally or per-request.
+Each endpoint has its own default server URL, sourced from the `ttd-data` SDK:
+
+| Endpoint | Path | Default Server |
+|---|---|---|
+| First-Party Data | `/data/advertiser` | `https://usw-data.adsrvr.org` |
+| Third-Party Data | `/data/thirdparty` | `https://bulk-data.adsrvr.org` |
+| Offline Conversion | `/providerapi/offlineconversion` | `https://offlineattrib.adsrvr.org` |
+| Deletion / Opt-Out — Advertiser | `/data/deletion-optout/advertiser` | `https://usw-data.adsrvr.org` |
+| Deletion / Opt-Out — Third Party | `/data/deletion-optout/thirdparty` | `https://usw-data.adsrvr.org` |
+| Deletion / Opt-Out — Merchant | `/data/deletion-optout/merchant` | `https://usw-data.adsrvr.org` |
+
+These can be overridden globally at the client level, or per-request via the context.
 
 ### Global Override
+
+Applies to all endpoints on the client:
 
 ```python
 client = TtdDatabricksClient.from_params(
@@ -335,6 +403,8 @@ client = TtdDatabricksClient.from_params(
 ```
 
 ### Per-Request Override
+
+Applies only to calls made with that context, leaving the client default unchanged for other endpoints:
 
 ```python
 context = AdvertiserContext(
