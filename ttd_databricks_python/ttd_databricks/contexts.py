@@ -12,7 +12,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Optional
 
-from ttd_data.models import PartnerDsrRequestType
+from ttd_data.models import DataOrigin, PartnerDsrRequestType
 
 from ttd_databricks_python.ttd_databricks.endpoints import TTDEndpoint
 
@@ -39,11 +39,14 @@ class AdvertiserContext(TTDContext):
 
     advertiser_id: AdvertiserId for API requests.
     data_provider_id: Optional DataProviderId for API requests. Default None (omitted from request).
+    data_origins: Optional list of DataOrigin objects to include. ttd_databricks_sdk is always
+        appended automatically. If None, ttd_databricks_sdk is the sole origin.
     base_url_override: Overrides default base URL. If None, uses endpoint-specific default.
     """
 
     advertiser_id: str
     data_provider_id: Optional[str] = None
+    data_origins: Optional[list[DataOrigin]] = None
     endpoint: TTDEndpoint = field(default=TTDEndpoint.ADVERTISER, init=False)
 
 
@@ -53,11 +56,14 @@ class ThirdPartyContext(TTDContext):
 
     data_provider_id: DataProviderId for API requests.
     is_user_id_already_hashed: If True, user IDs are treated as pre-hashed. Default False.
+    data_origins: Optional list of DataOrigin objects to include. ttd_databricks_sdk is always
+        appended automatically. If None, ttd_databricks_sdk is the sole origin.
     base_url_override: Overrides default base URL. If None, uses endpoint-specific default.
     """
 
     data_provider_id: str
     is_user_id_already_hashed: bool = False
+    data_origins: Optional[list[DataOrigin]] = None
     endpoint: TTDEndpoint = field(default=TTDEndpoint.THIRD_PARTY, init=False)
 
 
@@ -112,8 +118,11 @@ class OfflineConversionContext(TTDContext):
     """Typed context for /providerapi/offlineconversion endpoint.
 
     data_provider_id: DataProviderId for API requests.
+    data_origins: Optional list of DataOrigin objects to include. ttd_databricks_sdk is always
+        appended automatically. If None, ttd_databricks_sdk is the sole origin.
     base_url_override: Overrides default base URL. If None, uses endpoint-specific default.
     """
 
     data_provider_id: str
+    data_origins: Optional[list[DataOrigin]] = None
     endpoint: TTDEndpoint = field(default=TTDEndpoint.OFFLINE_CONVERSION, init=False)
