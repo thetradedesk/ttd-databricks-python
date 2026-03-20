@@ -48,7 +48,7 @@ See [Authentication](#authentication) for alternative client creation options.
 
 ### 2. Create a Context
 
-A context specifies which TTD endpoint to target and carries the identifiers (advertiser ID, data provider ID, etc.) required by that endpoint. You create one context per endpoint you intend to use.
+A context specifies which TTD endpoint to target and carries the identifiers (advertiser ID, data provider ID, etc.) required by that endpoint. A single context can be created per endpoint and reused across multiple calls.
 
 ```python
 from ttd_databricks_python.ttd_databricks import AdvertiserContext
@@ -65,19 +65,23 @@ context = AdvertiserContext(
 
 ### 3. Set Up Delta Tables
 
-If you plan to use batch processing, create the required Delta tables upfront. These calls are idempotent — safe to run on every notebook execution.
+If you plan to use batch processing, use the following helpers to set up the input, output, and metadata Delta tables. These can be created once and reused for all future executions.
 
 ```python
 from ttd_databricks_python.ttd_databricks import TTDEndpoint
 
 # Input table: schema matches the required columns for the chosen endpoint.
+# Created as a managed table in the default metastore location if no location is provided.
+# Default table name: ttd_{endpoint}_input (e.g. "ttd_advertiser_input").
 input_table = client.setup_input_table(endpoint=TTDEndpoint.ADVERTISER)
 
 # Output table: mirrors the input schema plus status columns
 # (success, error_code, error_message, processed_timestamp).
+# Default table name: ttd_{endpoint}_output (e.g. "ttd_advertiser_output").
 output_table = client.setup_output_table(endpoint=TTDEndpoint.ADVERTISER)
 
 # Metadata table: tracks run history (last_processed_date, run_timestamp, records_processed).
+# Default table name: "ttd_metadata".
 metadata_table = client.setup_metadata_table()
 ```
 
@@ -119,12 +123,12 @@ context = AdvertiserContext(
     data_provider_id="<data-provider-id>",  # optional
 )
 
-# Push the DataFrame to the TTD API in batches.
+# Push the DataFrame to the TTD Data API in batches.
 # Returns the input DataFrame enriched with status columns.
 result_df = client.push_data(
     df=input_df,
     context=context,
-    batch_size=10,  # number of rows per API request
+    batch_size=1600,  # number of rows per API request
 )
 # result_df contains all input columns plus:
 # success, error_code, error_message, processed_timestamp
@@ -146,8 +150,8 @@ client.batch_process(
     output_table=output_table,
     metadata_table=metadata_table,
     process_new_records_only=True,  # incremental; set False to reprocess all rows
-    batch_size=10,                  # rows per API request
-    parallelism=8,                  # number of concurrent Spark tasks
+    batch_size=1600,                  # rows per API request
+    parallelism=16,                  # number of concurrent Spark tasks
 )
 ```
 
@@ -185,14 +189,18 @@ client = TtdDatabricksClient.from_params(
 
 ### Dependency Injection (recommended for testing)
 
-Provide your own `DataClient` instance to control the underlying HTTP transport directly.
+Provide your own [`DataClient`](https://github.com/thetradedesk/ttd-data-python/blob/main/src/ttd_data/sdk.py) instance to control the underlying HTTP transport directly.
+Use this when you need to configure options not exposed by `from_params()`, or to inject a mock in tests.
 
 ```python
 from ttd_data import DataClient
 from ttd_databricks_python.ttd_databricks import TtdDatabricksClient
 
-# Instantiate DataClient separately to configure HTTP settings (e.g. server URL).
-data_client = DataClient()
+# Configure DataClient with custom HTTP settings.
+data_client = DataClient(
+    server_url="https://custom-server.example.com",  # override default server URL
+    timeout_ms=10000,                                 # request timeout in milliseconds
+)
 
 client = TtdDatabricksClient(
     data_api_client=data_client,
@@ -268,7 +276,7 @@ from ttd_databricks_python.ttd_databricks import DeletionOptOutAdvertiserContext
 #   PartnerDsrRequestType.OPT_OUT   — suppress future targeting
 context = DeletionOptOutAdvertiserContext(
     advertiser_id="<advertiser-id>",
-    request_type=PartnerDsrRequestType.DELETION,  # or OPT_OUT
+    request_type=PartnerDsrRequestType.OPT_OUT,  # or OPT_OUT
     data_provider_id="<data-provider-id>",        # optional
 )
 ```
@@ -286,7 +294,7 @@ from ttd_databricks_python.ttd_databricks import DeletionOptOutThirdPartyContext
 
 context = DeletionOptOutThirdPartyContext(
     data_provider_id="<data-provider-id>",
-    request_type=PartnerDsrRequestType.DELETION,  # or OPT_OUT
+    request_type=PartnerDsrRequestType.OPT_OUT,  # or OPT_OUT
     brand_id="<brand-id>",                        # optional
 )
 ```
@@ -304,7 +312,7 @@ from ttd_databricks_python.ttd_databricks import DeletionOptOutMerchantContext, 
 
 context = DeletionOptOutMerchantContext(
     merchant_id="<merchant-id>",
-    request_type=PartnerDsrRequestType.DELETION,  # or OPT_OUT
+    request_type=PartnerDsrRequestType.OPT_OUT,  # or OPT_OUT
 )
 ```
 
@@ -369,7 +377,7 @@ except TTDConfigurationError as e:
 | Exception | Cause |
 |---|---|
 | `TTDSchemaValidationError` | DataFrame is missing required columns for the endpoint |
-| `TTDApiError` | HTTP error or no response from the TTD API |
+| `TTDApiError` | HTTP error or no response from the TTD Data API |
 | `TTDConfigurationError` | SparkSession not found or PySpark not installed |
 
 For `push_data`, row-level errors are also captured inline in the result DataFrame via the `success`, `error_code`, and `error_message` columns — so processing is not interrupted by individual row failures.
@@ -417,13 +425,18 @@ context = AdvertiserContext(
 
 ## Custom HTTP Client
 
-The underlying HTTP client is provided by the `ttd-data` SDK via `DataClient`. You can inject a custom instance to configure the server URL or connection behaviour.
+The underlying HTTP client is provided by the `ttd-data` SDK via [`DataClient`](https://github.com/thetradedesk/ttd-data-python/blob/main/src/ttd_data/sdk.py). You can inject a custom instance to configure the server URL or connection behaviour.
 
 ```python
 from ttd_data import DataClient
+from ttd_data.utils.retries import BackoffStrategy, RetryConfig
 from ttd_databricks_python.ttd_databricks import TtdDatabricksClient
 
-data_client = DataClient(server_url="https://custom-server.example.com")
+data_client = DataClient(
+    server_url="https://custom-server.example.com",  # override default server URL
+    timeout_ms=10000,                                 # request timeout in milliseconds
+    retry_config=RetryConfig("backoff", BackoffStrategy(1000, 60000, 1.5, 3600000), True),  # custom retry config
+)
 
 client = TtdDatabricksClient(
     data_api_client=data_client,
