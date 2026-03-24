@@ -41,7 +41,7 @@ def get_ttd_input_schema(endpoint: TTDEndpoint) -> StructType:
     Returns:
         pyspark.sql.types.StructType with all columns (mandatory and optional) for the endpoint.
     """
-    return importlib.import_module(endpoint.schema_module).input_schema()
+    return importlib.import_module(endpoint.schema_module).input_schema()  # type: ignore[no-any-return]
 
 
 def get_required_column_names(endpoint: TTDEndpoint) -> list[str]:

@@ -78,12 +78,20 @@ def process_partitions(
                 raise RuntimeError(f"TTD API unrecoverable error: {exc}") from exc
 
             failed_item_mapping: dict[int, dict[str, Optional[str]]] = {}
+            has_unattributable = False
+            unattributable_error_code: Optional[str] = None
+            unattributable_error_message: Optional[str] = None
             for line in failed_lines:
                 message = line.message if line.message is not UNSET else None
                 error_code = line.error_code.value if (line.error_code and line.error_code is not UNSET) else None
                 item_number = extract_item_number(message)
                 if item_number is not None:
                     failed_item_mapping[item_number] = {"error_code": error_code, "error_message": message}
+                else:
+                    has_unattributable = True
+                    # Last unattributable error wins — multiple unattributable errors are not accumulated.
+                    unattributable_error_code = error_code
+                    unattributable_error_message = message
 
             for i, row_dict in enumerate(batch_rows, start=1):
                 if i in failed_item_mapping:
@@ -91,6 +99,10 @@ def process_partitions(
                     err = failed_item_mapping[i]
                     error_code_val = err["error_code"]
                     error_message_val = err["error_message"]
+                elif has_unattributable:
+                    success = False
+                    error_code_val = unattributable_error_code
+                    error_message_val = unattributable_error_message
                 else:
                     success = True
                     error_code_val = None

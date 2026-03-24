@@ -394,13 +394,22 @@ class TtdDatabricksClient:
 
         # Build a lookup of 1-based item number → error info from failed_lines.
         # The API identifies failed rows by item number in the Message field (e.g. "item #2").
+        # Rows with a parseable item number get their specific error. Rows without one fall back
+        # to the unattributable error (if any). Rows with no error at all are marked as success.
         failed_item_mapping: dict[int, dict[str, Optional[str]]] = {}
+        has_unattributable = False
+        unattributable_error_code: Optional[str] = None
+        unattributable_error_message: Optional[str] = None
         for line in failed_lines:
             message = line.message if line.message is not UNSET else None
             error_code = line.error_code.value if (line.error_code and line.error_code is not UNSET) else None
             item_number = extract_item_number(message)
             if item_number is not None:
                 failed_item_mapping[item_number] = {"error_code": error_code, "error_message": message}
+            else:
+                has_unattributable = True
+                unattributable_error_code = error_code
+                unattributable_error_message = message
 
         # Map each row to its result by 1-based position in the batch
         results: list[dict[str, Any]] = []
@@ -411,6 +420,14 @@ class TtdDatabricksClient:
                         "success": False,
                         "error_code": failed_item_mapping[i]["error_code"],
                         "error_message": failed_item_mapping[i]["error_message"],
+                    }
+                )
+            elif has_unattributable:
+                results.append(
+                    {
+                        "success": False,
+                        "error_code": unattributable_error_code,
+                        "error_message": unattributable_error_message,
                     }
                 )
             else:
