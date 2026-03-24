@@ -167,7 +167,7 @@ class TtdDatabricksClient:
         """
         import pyspark.sql.functions as F
 
-        from ttd_databricks_python.ttd_databricks.batching import apply_udf_and_explode, get_batch_udf, pre_batch_df
+        from ttd_databricks_python.ttd_databricks.batching import process_partitions
         from ttd_databricks_python.ttd_databricks.schemas import get_output_schema, validate_ttd_schema
 
         spark = self._get_spark()
@@ -187,10 +187,8 @@ class TtdDatabricksClient:
                 self._write_metadata(spark, metadata_table, 0)
             return
 
-        batched_df = pre_batch_df(df, batch_size, records_count)
-        udf_fn = get_batch_udf(context.endpoint, self._api_token, context)
         output_schema = get_output_schema(df.schema)
-        output_df = apply_udf_and_explode(batched_df, udf_fn, output_schema, parallelism)
+        output_df = process_partitions(df, batch_size, output_schema, self._api_token, context, parallelism)
 
         output_df.write.format("delta").mode("append").saveAsTable(output_table)
 

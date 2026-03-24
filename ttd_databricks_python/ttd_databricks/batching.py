@@ -4,82 +4,48 @@ Based on https://www.databricks.com/blog/scalable-spark-structured-streaming-res
 See the section "Design and Operational Considerations" for information on
 "Exactly Once vs At Least Once Guarantees" and "Estimating Cluster Core Count for a Target Throughput".
 
-See https://community.databricks.com/t5/data-engineering/using-pyspark-databricks-udfs-with-outside-function-imports/m-p/138556
-for an explanation of why the UDF uses inner imports rather than top-level ones.
+Inner imports are used inside partition_to_results so that modules are imported lazily
+in each worker process rather than serialized from the driver.
 """
 
 from __future__ import annotations
 
-import math
+from collections.abc import Iterator
 from typing import Any, Optional
 
-import pyspark.sql.functions as F
 from pyspark.sql import DataFrame
 from pyspark.sql.types import StructType
 from ttd_data import DataClient
 
 from ttd_databricks_python.ttd_databricks.contexts import TTDContext
-from ttd_databricks_python.ttd_databricks.endpoints import TTDEndpoint
 
-# Per-worker-process DataClient singleton. Each executor runs UDF tasks in a
+# Per-worker-process DataClient singleton. Each executor runs mapPartitions tasks in a
 # dedicated Python worker process, so there are no race conditions. Reusing the
 # client allows HTTP connection reuse across batches via the connection pool.
 _worker_client: Optional[DataClient] = None
 
 
-def pre_batch_df(df: DataFrame, batch_size: int, records_count: int) -> DataFrame:
-    """Assign batch IDs and group rows into one row per API call.
+def process_partitions(
+    df: DataFrame,
+    batch_size: int,
+    output_schema: StructType,
+    api_token: str,
+    context: TTDContext,
+    parallelism: int,
+) -> DataFrame:
+    """Process all rows through the API using a single mapPartitions pass.
 
-    Returns a DataFrame with one row per batch:
-      _batch_id:   batch identifier
-      _items_json: JSON array of all row fields — used to build the API payload
-                   and to reconstruct per-row output
+    Repartitions raw input rows to target parallelism, then processes each partition
+    locally: chunks rows into batch_size groups, calls the API for each chunk,
+    and yields result rows directly. Only one batch is held in memory at a time
+    per partition — memory is constant regardless of table size.
     """
-    batch_count = math.ceil(records_count / batch_size)
     all_input_cols = [c for c in df.columns if not c.startswith("_")]
+    output_field_names = [f.name for f in output_schema.fields]
+    handler_module = context.endpoint.handler_module
 
-    df = df.withColumn("_batch_id", F.monotonically_increasing_id() % batch_count)
-
-    return df.groupBy("_batch_id").agg(
-        F.to_json(F.collect_list(F.struct(*[F.col(c) for c in all_input_cols]))).alias("_items_json"),
-    )
-
-
-def apply_udf_and_explode(batched_df: DataFrame, udf_fn: Any, output_schema: StructType, parallelism: int) -> DataFrame:
-    """Apply endpoint UDF to batched_df and explode results back to per-row.
-
-    Repartitions to target parallelism before applying the UDF so API calls
-    run concurrently across workers.
-
-    Returns a flat DataFrame with all output_schema fields as top-level columns.
-    processed_timestamp is cast from the JSON string representation to TimestampType.
-    """
-    from pyspark.sql.types import ArrayType
-
-    api_results_df = batched_df.repartition(parallelism).withColumn("_results_json", udf_fn(F.col("_items_json")))
-
-    exploded_df = api_results_df.withColumn(
-        "_result", F.explode(F.from_json(F.col("_results_json"), ArrayType(output_schema)))
-    )
-
-    return exploded_df.select(
-        *[F.col(f"_result.{field.name}").alias(field.name) for field in output_schema.fields]
-    ).withColumn("processed_timestamp", F.to_timestamp(F.col("processed_timestamp")))
-
-
-def _build_generic_udf(api_token: str, context: TTDContext, handler_module: str) -> Any:
-    """Build a batch UDF that delegates item-building and API calls to the endpoint handler.
-
-    api_token, context, and handler_module are captured in the closure and serialized to
-    worker processes via cloudpickle. handler_module is kept as a plain string so the
-    handler module is imported lazily inside the UDF at execution time rather than
-    serializing a live module object.
-    """
-
-    @F.udf("string")  # type: ignore[untyped-decorator]
-    def call_ttd_api_batch(items_json: Optional[str]) -> Optional[str]:
+    def partition_to_results(rows: Any) -> Iterator[tuple[Any, ...]]:
         import importlib
-        import json
         from datetime import datetime, timezone
 
         from ttd_data import DataClient
@@ -88,53 +54,57 @@ def _build_generic_udf(api_token: str, context: TTDContext, handler_module: str)
 
         from ttd_databricks_python.ttd_databricks.utils import extract_item_number
 
-        if items_json is None:
-            return None
-        items_data = json.loads(items_json)
-        timestamp = datetime.now(timezone.utc).isoformat()
-
-        # Reuse a per-worker-process DataClient singleton to allow HTTP connection reuse.
         global _worker_client
         if _worker_client is None:
             _worker_client = DataClient()
         client = _worker_client
-
         handler = importlib.import_module(handler_module)
-        items = handler.build_items(items_data)
 
-        failed_lines = []
-        try:
-            failed_lines = handler.call_api(client, context, items, api_token)
-        except (APIError, NoResponseError) as exc:
-            raise RuntimeError(f"TTD API unrecoverable error: {exc}") from exc
+        def call_batch(batch_rows: list[dict[str, Any]]) -> Iterator[tuple[Any, ...]]:
+            timestamp = datetime.now(timezone.utc)
+            items = handler.build_items(batch_rows)
 
-        # Map 1-based item number → error info (API identifies failures by "item #N" in message)
-        failed_item_mapping: dict[int, dict[str, Optional[str]]] = {}
-        for line in failed_lines:
-            message = line.message if line.message is not UNSET else None
-            error_code = line.error_code.value if (line.error_code and line.error_code is not UNSET) else None
-            item_number = extract_item_number(message)
-            if item_number is not None:
-                failed_item_mapping[item_number] = {"error_code": error_code, "error_message": message}
+            failed_lines: list[Any] = []
+            try:
+                failed_lines = handler.call_api(client, context, items, api_token)
+            except (APIError, NoResponseError) as exc:
+                raise RuntimeError(f"TTD API unrecoverable error: {exc}") from exc
 
-        results: list[dict[str, Any]] = []
-        for i, row in enumerate(items_data, start=1):
-            r = dict(row)
-            if i in failed_item_mapping:
-                r["success"] = False
-                r["error_code"] = failed_item_mapping[i]["error_code"]
-                r["error_message"] = failed_item_mapping[i]["error_message"]
-            else:
-                r["success"] = True
-                r["error_code"] = None
-                r["error_message"] = None
-            r["processed_timestamp"] = timestamp
-            results.append(r)
-        return json.dumps(results)
+            failed_item_mapping: dict[int, dict[str, Optional[str]]] = {}
+            for line in failed_lines:
+                message = line.message if line.message is not UNSET else None
+                error_code = line.error_code.value if (line.error_code and line.error_code is not UNSET) else None
+                item_number = extract_item_number(message)
+                if item_number is not None:
+                    failed_item_mapping[item_number] = {"error_code": error_code, "error_message": message}
 
-    return call_ttd_api_batch
+            for i, row_dict in enumerate(batch_rows, start=1):
+                if i in failed_item_mapping:
+                    success = False
+                    err = failed_item_mapping[i]
+                    error_code_val = err["error_code"]
+                    error_message_val = err["error_message"]
+                else:
+                    success = True
+                    error_code_val = None
+                    error_message_val = None
+                result = {
+                    **row_dict,
+                    "success": success,
+                    "error_code": error_code_val,
+                    "error_message": error_message_val,
+                    "processed_timestamp": timestamp,
+                }
+                yield tuple(result[f] for f in output_field_names)
 
+        batch: list[dict[str, Any]] = []
+        for row in rows:
+            row_dict = row.asDict()
+            batch.append({c: row_dict[c] for c in all_input_cols})
+            if len(batch) == batch_size:
+                yield from call_batch(batch)
+                batch = []
+        if batch:
+            yield from call_batch(batch)
 
-def get_batch_udf(endpoint: TTDEndpoint, api_token: str, context: TTDContext) -> Any:
-    """Return the endpoint-specific batch UDF, ready to apply to a batched DataFrame."""
-    return _build_generic_udf(api_token, context, endpoint.handler_module)
+    return df.repartition(parallelism).rdd.mapPartitions(partition_to_results).toDF(output_schema)
