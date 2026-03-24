@@ -1,5 +1,7 @@
 # ttd-databricks
 
+> **Alpha:** This SDK is in early development. APIs may change without notice between releases.
+
 Python SDK for integrating Databricks with The Trade Desk Data API. Supports First Party Data, Third Party Data, Offline Conversion Data, and Deletion/Opt-Out workflows.
 
 - **Ad hoc mode** — push a DataFrame directly and receive per-row results inline
