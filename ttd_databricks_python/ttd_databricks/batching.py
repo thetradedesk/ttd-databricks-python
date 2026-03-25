@@ -41,7 +41,8 @@ def process_partitions(
     per partition — memory is constant regardless of table size.
 
     parallelism defaults to 2x the cluster's defaultParallelism, which is suitable
-    for I/O-bound API workloads where tasks spend most of their time waiting on network.
+    for I/O-bound API workloads where tasks spend a notable about of time waiting on
+    responses from the server.
     """
     if parallelism is None:
         parallelism = 2 * df.sparkSession.sparkContext.defaultParallelism
@@ -105,12 +106,13 @@ def process_partitions(
 
         batch: list[dict[str, Any]] = []
         for row in rows:
-            row_dict = row.asDict()
-            batch.append({c: row_dict[c] for c in all_input_cols})
+            batch.append(row.asDict())
             if len(batch) == batch_size:
                 yield from call_batch(batch)
                 batch = []
         if batch:
             yield from call_batch(batch)
 
-    return df.repartition(parallelism).rdd.mapPartitions(partition_to_results).toDF(output_schema)
+    return (
+        df.select(*all_input_cols).repartition(parallelism).rdd.mapPartitions(partition_to_results).toDF(output_schema)
+    )
