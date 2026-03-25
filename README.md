@@ -151,7 +151,6 @@ client.batch_process(
     metadata_table=metadata_table,
     process_new_records_only=True,  # incremental; set False to reprocess all rows
     batch_size=1600,                  # rows per API request
-    parallelism=16,                  # number of concurrent Spark tasks
 )
 ```
 

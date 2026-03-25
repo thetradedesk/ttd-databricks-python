@@ -31,7 +31,7 @@ def process_partitions(
     output_schema: StructType,
     api_token: str,
     context: TTDContext,
-    parallelism: int,
+    parallelism: Optional[int] = None,
 ) -> DataFrame:
     """Process all rows through the API using a single mapPartitions pass.
 
@@ -39,7 +39,13 @@ def process_partitions(
     locally: chunks rows into batch_size groups, calls the API for each chunk,
     and yields result rows directly. Only one batch is held in memory at a time
     per partition — memory is constant regardless of table size.
+
+    parallelism defaults to 2x the cluster's defaultParallelism, which is suitable
+    for I/O-bound API workloads where tasks spend most of their time waiting on network.
     """
+    if parallelism is None:
+        parallelism = 2 * df.sparkSession.sparkContext.defaultParallelism
+
     all_input_cols = [c for c in df.columns if not c.startswith("_")]
     output_field_names = [f.name for f in output_schema.fields]
     handler_module = context.endpoint.handler_module
