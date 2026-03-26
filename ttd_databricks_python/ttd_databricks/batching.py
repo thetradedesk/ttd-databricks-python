@@ -55,6 +55,7 @@ def process_partitions(
         import importlib
         from datetime import datetime, timezone
 
+        import httpx
         from ttd_data import DataClient
         from ttd_data.errors import APIError, NoResponseError
 
@@ -62,7 +63,7 @@ def process_partitions(
 
         global _worker_client
         if _worker_client is None:
-            _worker_client = DataClient()
+            _worker_client = DataClient(timeout_ms=10_000)
         client = _worker_client
         handler = importlib.import_module(handler_module)
 
@@ -70,11 +71,42 @@ def process_partitions(
             timestamp = datetime.now(timezone.utc)
             items = handler.build_items(batch_rows)
 
+            def fail_batch(
+                error_code: str | None,
+                error_message: str,
+            ) -> Iterator[tuple[Any, ...]]:
+                for row_dict in batch_rows:
+                    result = {
+                        **row_dict,
+                        "success": False,
+                        "error_code": error_code,
+                        "error_message": error_message,
+                        "processed_timestamp": timestamp,
+                    }
+                    yield tuple(result[f] for f in output_field_names)
+
             failed_lines: list[Any] = []
             try:
                 failed_lines = handler.call_api(client, context, items, api_token)
-            except (APIError, NoResponseError) as exc:
+            except (
+                httpx.TimeoutException,
+                httpx.RemoteProtocolError,
+                NoResponseError,
+            ) as exc:
+                # Transient: timeout, stale pooled connection, or no response.
+                # Mark batch as failed and continue.
+                yield from fail_batch(None, str(exc))
+                return
+            except APIError as exc:
+                if exc.status_code >= 500:
+                    # Transient server error, mark batch as failed and continue.
+                    yield from fail_batch(str(exc.status_code), str(exc))
+                    return
+                # 4xx errors (auth, bad request) — fail the job.
                 raise RuntimeError(f"TTD API unrecoverable error: {exc}") from exc
+            except Exception as exc:
+                # Unexpected error — fail the job.
+                raise RuntimeError(f"Unexpected error during API call: {exc}") from exc
 
             row_results = parse_failed_lines(failed_lines, len(batch_rows))
             for row_dict, row_result in zip(batch_rows, row_results, strict=True):
