@@ -365,10 +365,9 @@ class TtdDatabricksClient:
         import importlib
 
         from ttd_data.errors import APIError, NoResponseError
-        from ttd_data.types import UNSET
 
         from ttd_databricks_python.ttd_databricks.exceptions import TTDApiError
-        from ttd_databricks_python.ttd_databricks.utils import extract_item_number
+        from ttd_databricks_python.ttd_databricks.utils import parse_failed_lines
 
         handler = importlib.import_module(context.endpoint.handler_module)
         items = handler.build_items([row.asDict() for row in rows])
@@ -392,48 +391,7 @@ class TtdDatabricksClient:
                 batch_index=batch_index,
             ) from exc
 
-        # Build a lookup of 1-based item number → error info from failed_lines.
-        # The API identifies failed rows by item number in the Message field (e.g. "item #2").
-        # Rows with a parseable item number get their specific error. Rows without one fall back
-        # to the unattributable error (if any). Rows with no error at all are marked as success.
-        failed_item_mapping: dict[int, dict[str, Optional[str]]] = {}
-        has_unattributable = False
-        unattributable_error_code: Optional[str] = None
-        unattributable_error_message: Optional[str] = None
-        for line in failed_lines:
-            message = line.message if line.message is not UNSET else None
-            error_code = line.error_code.value if (line.error_code and line.error_code is not UNSET) else None
-            item_number = extract_item_number(message)
-            if item_number is not None:
-                failed_item_mapping[item_number] = {"error_code": error_code, "error_message": message}
-            else:
-                has_unattributable = True
-                unattributable_error_code = error_code
-                unattributable_error_message = message
-
-        # Map each row to its result by 1-based position in the batch
-        results: list[dict[str, Any]] = []
-        for i, _ in enumerate(rows, start=1):
-            if i in failed_item_mapping:
-                results.append(
-                    {
-                        "success": False,
-                        "error_code": failed_item_mapping[i]["error_code"],
-                        "error_message": failed_item_mapping[i]["error_message"],
-                    }
-                )
-            elif has_unattributable:
-                results.append(
-                    {
-                        "success": False,
-                        "error_code": unattributable_error_code,
-                        "error_message": unattributable_error_message,
-                    }
-                )
-            else:
-                results.append({"success": True, "error_code": None, "error_message": None})
-
-        return results
+        return parse_failed_lines(failed_lines, len(rows))
 
     @staticmethod
     def _fill_nullable_columns(df: DataFrame, endpoint: TTDEndpoint) -> DataFrame:
