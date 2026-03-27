@@ -41,15 +41,13 @@ def test_get_spark_raises_config_error_when_no_active_session() -> None:
 # --------------------------------------------------------------------------- #
 
 
-def test_get_last_processed_date_returns_none_on_exception() -> None:
-    # If the metadata table can't be read (e.g. first run, table doesn't exist yet),
-    # the pipeline must not crash — it should fall back to processing all records.
+def test_get_last_processed_date_reraises_unexpected_exception() -> None:
+    # Genuine errors (permissions, corrupt table) must not be silently swallowed.
     mock_spark = MagicMock()
-    mock_spark.table.side_effect = Exception("Table or view not found")
+    mock_spark.table.side_effect = Exception("Permission denied on table ttd_metadata")
 
-    result = _make_client()._get_last_processed_date(mock_spark, "ttd_metadata", override=None)
-
-    assert result is None
+    with pytest.raises(Exception, match="Permission denied"):
+        _make_client()._get_last_processed_date(mock_spark, "ttd_metadata", override=None)
 
 
 def test_get_last_processed_date_returns_latest_date(spark: SparkSession) -> None:
