@@ -57,9 +57,8 @@ def process_partitions(
 
         from ttd_data import DataClient
         from ttd_data.errors import APIError, NoResponseError
-        from ttd_data.types import UNSET
 
-        from ttd_databricks_python.ttd_databricks.utils import extract_item_number
+        from ttd_databricks_python.ttd_databricks.utils import parse_failed_lines
 
         global _worker_client
         if _worker_client is None:
@@ -77,31 +76,9 @@ def process_partitions(
             except (APIError, NoResponseError) as exc:
                 raise RuntimeError(f"TTD API unrecoverable error: {exc}") from exc
 
-            failed_item_mapping: dict[int, dict[str, Optional[str]]] = {}
-            for line in failed_lines:
-                message = line.message if line.message is not UNSET else None
-                error_code = line.error_code.value if (line.error_code and line.error_code is not UNSET) else None
-                item_number = extract_item_number(message)
-                if item_number is not None:
-                    failed_item_mapping[item_number] = {"error_code": error_code, "error_message": message}
-
-            for i, row_dict in enumerate(batch_rows, start=1):
-                if i in failed_item_mapping:
-                    success = False
-                    err = failed_item_mapping[i]
-                    error_code_val = err["error_code"]
-                    error_message_val = err["error_message"]
-                else:
-                    success = True
-                    error_code_val = None
-                    error_message_val = None
-                result = {
-                    **row_dict,
-                    "success": success,
-                    "error_code": error_code_val,
-                    "error_message": error_message_val,
-                    "processed_timestamp": timestamp,
-                }
+            row_results = parse_failed_lines(failed_lines, len(batch_rows))
+            for row_dict, row_result in zip(batch_rows, row_results, strict=True):
+                result = {**row_dict, **row_result, "processed_timestamp": timestamp}
                 yield tuple(result[f] for f in output_field_names)
 
         batch: list[dict[str, Any]] = []

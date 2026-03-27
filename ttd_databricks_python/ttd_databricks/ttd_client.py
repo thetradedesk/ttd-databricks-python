@@ -168,9 +168,19 @@ class TtdDatabricksClient:
         import pyspark.sql.functions as F
 
         from ttd_databricks_python.ttd_databricks.batching import process_partitions
+        from ttd_databricks_python.ttd_databricks.exceptions import TTDConfigurationError
         from ttd_databricks_python.ttd_databricks.schemas import get_output_schema, validate_ttd_schema
 
+        if process_new_records_only and metadata_table is None:
+            raise TTDConfigurationError("metadata_table is required when process_new_records_only=True")
+
         spark = self._get_spark()
+
+        if metadata_table is not None and not spark.catalog.tableExists(metadata_table):
+            raise TTDConfigurationError(
+                f"Metadata table '{metadata_table}' does not exist. Call setup_metadata_table() before batch_process()."
+            )
+
         df = spark.table(input_table)
 
         if process_new_records_only:
@@ -365,10 +375,9 @@ class TtdDatabricksClient:
         import importlib
 
         from ttd_data.errors import APIError, NoResponseError
-        from ttd_data.types import UNSET
 
         from ttd_databricks_python.ttd_databricks.exceptions import TTDApiError
-        from ttd_databricks_python.ttd_databricks.utils import extract_item_number
+        from ttd_databricks_python.ttd_databricks.utils import parse_failed_lines
 
         handler = importlib.import_module(context.endpoint.handler_module)
         items = handler.build_items([row.asDict() for row in rows])
@@ -392,31 +401,7 @@ class TtdDatabricksClient:
                 batch_index=batch_index,
             ) from exc
 
-        # Build a lookup of 1-based item number → error info from failed_lines.
-        # The API identifies failed rows by item number in the Message field (e.g. "item #2").
-        failed_item_mapping: dict[int, dict[str, Optional[str]]] = {}
-        for line in failed_lines:
-            message = line.message if line.message is not UNSET else None
-            error_code = line.error_code.value if (line.error_code and line.error_code is not UNSET) else None
-            item_number = extract_item_number(message)
-            if item_number is not None:
-                failed_item_mapping[item_number] = {"error_code": error_code, "error_message": message}
-
-        # Map each row to its result by 1-based position in the batch
-        results: list[dict[str, Any]] = []
-        for i, _ in enumerate(rows, start=1):
-            if i in failed_item_mapping:
-                results.append(
-                    {
-                        "success": False,
-                        "error_code": failed_item_mapping[i]["error_code"],
-                        "error_message": failed_item_mapping[i]["error_message"],
-                    }
-                )
-            else:
-                results.append({"success": True, "error_code": None, "error_message": None})
-
-        return results
+        return parse_failed_lines(failed_lines, len(rows))
 
     @staticmethod
     def _fill_nullable_columns(df: DataFrame, endpoint: TTDEndpoint) -> DataFrame:
@@ -445,21 +430,19 @@ class TtdDatabricksClient:
         """Return the last processed date for incremental filtering.
 
         Returns override if provided, otherwise reads the max last_processed_date
-        from metadata_table. Returns None if metadata_table is unavailable or empty.
+        from metadata_table. Returns None if metadata_table is None or the table is empty.
         """
         if override is not None:
             return override
         if metadata_table is None:
             return None
-        try:
-            import pyspark.sql.functions as F
 
-            last_processed_date: Optional[datetime] = (
-                spark.table(metadata_table).agg(F.max("last_processed_date")).collect()[0][0]
-            )
-            return last_processed_date
-        except Exception:
-            return None
+        import pyspark.sql.functions as F
+
+        last_processed_date: Optional[datetime] = (
+            spark.table(metadata_table).agg(F.max("last_processed_date")).collect()[0][0]
+        )
+        return last_processed_date
 
     def _write_metadata(self, spark: SparkSession, metadata_table: str, records_processed: int) -> None:
         """Append a run record to the metadata table."""
