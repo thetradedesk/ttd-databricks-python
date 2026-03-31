@@ -369,11 +369,15 @@ class TtdDatabricksClient:
         - rows: Spark Rows from df.collect(); must contain the mandatory columns for context.endpoint.
         - batch_index: Zero-based batch number used in TTDApiError if the call fails.
 
+        Transient errors (timeouts, stale connections, no response, server 5xx) return
+        all-failed results so the caller can continue with remaining batches.
+
         Raises:
-            TTDApiError: On unrecoverable HTTP errors (403, 413, 5xx, etc.).
+            TTDApiError: On unrecoverable errors (4xx client errors, unexpected exceptions).
         """
         import importlib
 
+        import httpx
         from ttd_data.errors import APIError, NoResponseError
 
         from ttd_databricks_python.ttd_databricks.exceptions import TTDApiError
@@ -382,19 +386,27 @@ class TtdDatabricksClient:
         handler = importlib.import_module(context.endpoint.handler_module)
         items = handler.build_items([row.asDict() for row in rows])
 
+        def fail_all(error_code: str | None, error_message: str) -> list[dict[str, Any]]:
+            return [{"success": False, "error_code": error_code, "error_message": error_message} for _ in rows]
+
         failed_lines: list[Any] = []
         try:
             failed_lines = handler.call_api(self._data_api_client, context, items, self._api_token)
-        except (APIError, NoResponseError) as exc:
-            # SDK-level errors: HTTP errors (403, 413, 5xx) or no response received
-            raw = getattr(exc, "raw_response", None)
+        except (
+            httpx.TimeoutException,
+            httpx.RemoteProtocolError,
+            NoResponseError,
+        ) as exc:
+            return fail_all(None, str(exc))
+        except APIError as exc:
+            if exc.status_code >= 500:
+                return fail_all(str(exc.status_code), str(exc))
             raise TTDApiError(
-                status_code=getattr(raw, "status_code", None),
+                status_code=exc.status_code,
                 response_text=str(exc),
                 batch_index=batch_index,
             ) from exc
         except Exception as exc:
-            # Unexpected non-SDK errors (e.g. programming errors, unexpected library exceptions)
             raise TTDApiError(
                 status_code=None,
                 response_text=str(exc),

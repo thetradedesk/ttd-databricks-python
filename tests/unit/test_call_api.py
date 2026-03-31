@@ -158,7 +158,7 @@ def test_failed_line_with_null_message_and_code_fails_all_rows():
 # --------------------------------------------------------------------------- #
 
 
-def test_no_response_error_from_handler_raises_ttd_api_error():
+def test_no_response_error_from_handler_returns_failed_results():
     client = _make_client()
     mock_handler = MagicMock()
     mock_handler.build_items.return_value = [MagicMock()]
@@ -173,8 +173,10 @@ def test_no_response_error_from_handler_raises_ttd_api_error():
     mock_handler.call_api.side_effect = _FakeNoResponseError()
 
     with patch("importlib.import_module", return_value=mock_handler):
-        with pytest.raises(TTDApiError):
-            client._call_api(_CONTEXT, _make_rows(_ROW), batch_index=0)
+        results = client._call_api(_CONTEXT, _make_rows(_ROW), batch_index=0)
+        assert len(results) == 1
+        assert results[0]["success"] is False
+        assert results[0]["error_message"] == "No response"
 
 
 def test_unexpected_exception_from_handler_raises_ttd_api_error_with_message():
