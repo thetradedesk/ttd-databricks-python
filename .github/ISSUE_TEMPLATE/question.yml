@@ -1,0 +1,27 @@
+name: Question
+description: Ask a question about SDK usage or behavior
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Before submitting a question, please ensure you have checked the following:**
+        * [ ] The [ttd-databricks SDK README](https://github.com/thetradedesk/ttd-databricks-python#readme)
+        * [ ] The [TTD Data API Documentation](https://open.thetradedesk.com/advertiser/docsApp/GuidesAdvertiser/data/doc/DataApiReferenceAdvertiser)
+        * [ ] Existing [issues](https://github.com/thetradedesk/ttd-databricks-python/issues)
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      placeholder: Please provide a clear and concise description of the issue you are facing.
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      placeholder: SDK version, endpoint, code snippet, or anything else that helps us understand your question.
+    validations:
+      required: false

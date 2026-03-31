@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: TTD Data API Documentation
+    url: https://open.thetradedesk.com/advertiser/docsApp/GuidesAdvertiser/data/doc/DataApiReferenceAdvertiser
+    about: Official TTD Data API docs for endpoint reference and authentication.
