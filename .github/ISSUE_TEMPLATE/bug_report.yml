@@ -10,9 +10,18 @@ body:
   - type: input
     id: sdk-version
     attributes:
-      label: SDK Version
+      label: ttd-databricks Version
       description: "Output of `pip show ttd-databricks`"
       placeholder: "e.g. 0.3.1"
+    validations:
+      required: true
+
+  - type: input
+    id: ttd-data-version
+    attributes:
+      label: ttd-data Version
+      description: "Output of `pip show ttd-data`"
+      placeholder: "e.g. 1.2.0"
     validations:
       required: true
 
@@ -55,11 +64,22 @@ body:
     validations:
       required: true
 
+  - type: dropdown
+    id: regression
+    attributes:
+      label: Did this work before?
+      options:
+        - "Yes, it was previously working"
+        - "No, this never worked"
+        - "Not sure"
+    validations:
+      required: true
+
   - type: textarea
     id: description
     attributes:
       label: Describe the Bug
-      placeholder: A clear and concise description of what went wrong.
+      placeholder: "A clear and concise description of what went wrong. Please include any configs used if applicable (e.g. parallelism, batch_size)."
     validations:
       required: true
 

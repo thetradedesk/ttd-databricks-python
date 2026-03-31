@@ -2,13 +2,17 @@ name: Question
 description: Ask a question about SDK usage or behavior
 labels: ["question"]
 body:
-  - type: markdown
+  - type: checkboxes
+    id: prerequisites
     attributes:
-      value: |
-        **Before submitting a question, please ensure you have checked the following:**
-        * [ ] The [ttd-databricks SDK README](https://github.com/thetradedesk/ttd-databricks-python#readme)
-        * [ ] The [TTD Data API Documentation](https://open.thetradedesk.com/advertiser/docsApp/GuidesAdvertiser/data/doc/DataApiReferenceAdvertiser)
-        * [ ] Existing [issues](https://github.com/thetradedesk/ttd-databricks-python/issues)
+      label: Before submitting a question, please ensure you have checked the following
+      options:
+        - label: I have read the [ttd-databricks SDK README](https://github.com/thetradedesk/ttd-databricks-python#readme)
+          required: true
+        - label: I have read the [TTD Data API Documentation](https://open.thetradedesk.com/advertiser/docsApp/GuidesAdvertiser/data/doc/DataApiReferenceAdvertiser)
+          required: true
+        - label: I have searched existing [issues](https://github.com/thetradedesk/ttd-databricks-python/issues)
+          required: true
 
   - type: textarea
     id: question
