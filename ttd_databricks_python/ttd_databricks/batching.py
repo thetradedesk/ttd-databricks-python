@@ -32,6 +32,7 @@ def process_partitions(
     api_token: str,
     context: TTDContext,
     parallelism: Optional[int] = None,
+    data_load_trace_id: Optional[str] = None,
 ) -> DataFrame:
     """Process all rows through the API using a single mapPartitions pass.
 
@@ -87,7 +88,7 @@ def process_partitions(
 
             failed_lines: list[Any] = []
             try:
-                failed_lines = handler.call_api(client, context, items, api_token)
+                failed_lines = handler.call_api(client, context, items, api_token, data_load_trace_id)
             except (
                 httpx.TimeoutException,
                 httpx.RemoteProtocolError,

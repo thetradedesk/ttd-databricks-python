@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Optional, cast
 
 from ttd_databricks_python.ttd_databricks.contexts import DeletionOptOutMerchantContext
 
@@ -26,6 +26,7 @@ def call_api(
     context: DeletionOptOutMerchantContext,
     items: list[PartnerDsrDataItem],
     api_token: str,
+    data_load_trace_id: Optional[str] = None,
 ) -> list[Any]:
     """Call data_subject_request_merchant_data. Returns failed_lines (may be empty).
 
@@ -41,6 +42,7 @@ def call_api(
             ttd_auth=api_token,
             merchant_id=context.merchant_id,
             items=items,
+            data_load_trace_id=data_load_trace_id if data_load_trace_id is not None else UNSET,
             request_type=context.request_type,
             server_url=context.base_url_override,
         )
