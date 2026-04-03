@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Optional, cast
 
 from ttd_databricks_python.ttd_databricks.constants import TTD_DATABRICKS_SDK_ORIGIN_ID
 from ttd_databricks_python.ttd_databricks.contexts import AdvertiserContext
@@ -42,6 +42,7 @@ def call_api(
     context: AdvertiserContext,
     items: list[AdvertiserDataItem],
     api_token: str,
+    data_load_trace_id: Optional[str] = None,
 ) -> list[Any]:
     """Call ingest_advertiser_data. Returns failed_lines (may be empty).
 
@@ -62,6 +63,7 @@ def call_api(
             ttd_auth=api_token,
             data_provider_id=context.data_provider_id if context.data_provider_id is not None else UNSET,
             items=items,
+            data_load_trace_id=data_load_trace_id if data_load_trace_id is not None else UNSET,
             data_origins=data_origins,
             server_url=context.base_url_override,
         )

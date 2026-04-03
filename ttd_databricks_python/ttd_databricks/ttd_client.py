@@ -93,6 +93,7 @@ class TtdDatabricksClient:
         df: DataFrame,
         context: TTDContext,
         batch_size: int = 10,
+        data_load_trace_id: Optional[str] = None,
     ) -> DataFrame:
         """
         Process DataFrame and return results with status columns.
@@ -107,6 +108,8 @@ class TtdDatabricksClient:
         - context: Typed context object (AdvertiserContext, ThirdPartyContext, etc.)
           Contains endpoint-specific config (data_provider_id, advertiser_id, etc.)
         - batch_size: Number of rows per API request. Default 10.
+        - data_load_trace_id: Optional trace ID passed for debugging. Passed as
+          DataLoadTraceId in the API request body. If None, omitted from the request.
         """
         from ttd_databricks_python.ttd_databricks.schemas import get_output_schema, validate_ttd_schema
 
@@ -120,7 +123,7 @@ class TtdDatabricksClient:
         for batch_index, i in enumerate(range(0, len(all_rows), batch_size)):
             batch = all_rows[i : i + batch_size]
             timestamp = datetime.now(timezone.utc)
-            api_results = self._call_api(context, batch, batch_index)
+            api_results = self._call_api(context, batch, batch_index, data_load_trace_id)
 
             for row, result in zip(batch, api_results, strict=True):
                 merged = row.asDict()
@@ -146,6 +149,7 @@ class TtdDatabricksClient:
         last_processed_date_override: Optional[datetime] = None,
         batch_size: int = 10,
         parallelism: int = 8,
+        data_load_trace_id: Optional[str] = None,
     ) -> None:
         """
         Read from input table, batch process, write to output table.
@@ -164,6 +168,8 @@ class TtdDatabricksClient:
           from metadata_table (useful for reprocessing).
         - batch_size: Number of rows per API request. Default 10.
         - parallelism: Number of parallel partitions for API calls. Default 8.
+        - data_load_trace_id: Optional trace ID passed for debugging. Passed as
+          DataLoadTraceId in the API request body. If None, omitted from the request.
         """
         import pyspark.sql.functions as F
 
@@ -198,7 +204,9 @@ class TtdDatabricksClient:
             return
 
         output_schema = get_output_schema(df.schema)
-        output_df = process_partitions(df, batch_size, output_schema, self._api_token, context, parallelism)
+        output_df = process_partitions(
+            df, batch_size, output_schema, self._api_token, context, parallelism, data_load_trace_id
+        )
 
         output_df.write.format("delta").mode("append").saveAsTable(output_table)
 
@@ -359,7 +367,9 @@ class TtdDatabricksClient:
                 "Databricks environment or have pyspark available."
             ) from exc
 
-    def _call_api(self, context: TTDContext, rows: list[Row], batch_index: int) -> list[dict[str, Any]]:
+    def _call_api(
+        self, context: TTDContext, rows: list[Row], batch_index: int, data_load_trace_id: Optional[str] = None
+    ) -> list[dict[str, Any]]:
         """Call the endpoint API for a batch of Spark Rows.
 
         Delegates item-building and the API call to the endpoint-specific handler module,
@@ -391,7 +401,7 @@ class TtdDatabricksClient:
 
         failed_lines: list[Any] = []
         try:
-            failed_lines = handler.call_api(self._data_api_client, context, items, self._api_token)
+            failed_lines = handler.call_api(self._data_api_client, context, items, self._api_token, data_load_trace_id)
         except (
             httpx.TimeoutException,
             httpx.RemoteProtocolError,
