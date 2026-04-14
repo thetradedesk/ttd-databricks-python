@@ -16,6 +16,8 @@ from ttd_databricks_python.ttd_databricks.contexts import AdvertiserContext
 from ttd_databricks_python.ttd_databricks.exceptions import TTDSchemaValidationError
 from ttd_databricks_python.ttd_databricks.ttd_client import TtdDatabricksClient
 
+pytestmark = pytest.mark.spark
+
 _CONTEXT = AdvertiserContext(advertiser_id="adv123")
 _REQUIRED_SCHEMA = StructType(
     [

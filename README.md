@@ -326,11 +326,10 @@ The schema for `TTDEndpoint.DELETION_OPTOUT_MERCHANT` is defined in [deletion_op
 Retrieve the full input schema for an endpoint:
 
 ```python
-from ttd_databricks_python.ttd_databricks import TTDEndpoint
-from ttd_databricks_python.ttd_databricks.schemas import get_ttd_input_schema
+from ttd_databricks_python.ttd_databricks import TTDEndpoint, get_ttd_input_schema
 
 schema = get_ttd_input_schema(TTDEndpoint.ADVERTISER)
-schema.printTreeString()
+print(schema.treeString())
 ```
 
 Get just the required column names (useful for DataFrame preparation):
