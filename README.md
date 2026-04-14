@@ -229,7 +229,7 @@ context = AdvertiserContext(
 )
 ```
 
-See [schema](#inspecting-schemas) for required and optional columns — `TTDEndpoint.ADVERTISER`
+The schema for `TTDEndpoint.ADVERTISER` is defined in [advertiser.py](https://github.com/thetradedesk/ttd-databricks-python/blob/main/ttd_databricks_python/ttd_databricks/schemas/advertiser.py). Check out the [Inspecting Schemas](https://github.com/thetradedesk/ttd-databricks-python/blob/main/README.md#inspecting-schemas) section to list required and optional columns and use the helper functions to validate your DataFrame before submitting.
 
 ---
 
@@ -246,7 +246,7 @@ context = ThirdPartyContext(
 )
 ```
 
-See [schema](#inspecting-schemas) for required and optional columns — `TTDEndpoint.THIRD_PARTY`
+The schema for `TTDEndpoint.THIRD_PARTY` is defined in [third_party.py](https://github.com/thetradedesk/ttd-databricks-python/blob/main/ttd_databricks_python/ttd_databricks/schemas/third_party.py). Check out the [Inspecting Schemas](https://github.com/thetradedesk/ttd-databricks-python/blob/main/README.md#inspecting-schemas) section to list required and optional columns and use the helper functions to validate your DataFrame before submitting.
 
 ---
 
@@ -261,7 +261,7 @@ context = OfflineConversionContext(
 )
 ```
 
-See [schema](#inspecting-schemas) for required and optional columns — `TTDEndpoint.OFFLINE_CONVERSION`
+The schema for `TTDEndpoint.OFFLINE_CONVERSION` is defined in [offline_conversion.py](https://github.com/thetradedesk/ttd-databricks-python/blob/main/ttd_databricks_python/ttd_databricks/schemas/offline_conversion.py). Check out the [Inspecting Schemas](https://github.com/thetradedesk/ttd-databricks-python/blob/main/README.md#inspecting-schemas) section to list required and optional columns and use the helper functions to validate your DataFrame before submitting.
 
 ---
 
@@ -282,7 +282,7 @@ context = DeletionOptOutAdvertiserContext(
 )
 ```
 
-See [schema](#inspecting-schemas) for required and optional columns — `TTDEndpoint.DELETION_OPTOUT_ADVERTISER`
+The schema for `TTDEndpoint.DELETION_OPTOUT_ADVERTISER` is defined in [deletion_optout_advertiser.py](https://github.com/thetradedesk/ttd-databricks-python/blob/main/ttd_databricks_python/ttd_databricks/schemas/deletion_optout_advertiser.py). Check out the [Inspecting Schemas](https://github.com/thetradedesk/ttd-databricks-python/blob/main/README.md#inspecting-schemas) section to list required and optional columns and use the helper functions to validate your DataFrame before submitting.
 
 ---
 
@@ -300,7 +300,7 @@ context = DeletionOptOutThirdPartyContext(
 )
 ```
 
-See [schema](#inspecting-schemas) for required and optional columns — `TTDEndpoint.DELETION_OPTOUT_THIRDPARTY`
+The schema for `TTDEndpoint.DELETION_OPTOUT_THIRDPARTY` is defined in [deletion_optout_thirdparty.py](https://github.com/thetradedesk/ttd-databricks-python/blob/main/ttd_databricks_python/ttd_databricks/schemas/deletion_optout_thirdparty.py). Check out the [Inspecting Schemas](https://github.com/thetradedesk/ttd-databricks-python/blob/main/README.md#inspecting-schemas) section to list required and optional columns and use the helper functions to validate your DataFrame before submitting.
 
 ---
 
@@ -317,7 +317,7 @@ context = DeletionOptOutMerchantContext(
 )
 ```
 
-See [schema](#inspecting-schemas) for required and optional columns — `TTDEndpoint.DELETION_OPTOUT_MERCHANT`
+The schema for `TTDEndpoint.DELETION_OPTOUT_MERCHANT` is defined in [deletion_optout_merchant.py](https://github.com/thetradedesk/ttd-databricks-python/blob/main/ttd_databricks_python/ttd_databricks/schemas/deletion_optout_merchant.py). Check out the [Inspecting Schemas](https://github.com/thetradedesk/ttd-databricks-python/blob/main/README.md#inspecting-schemas) section to list required and optional columns and use the helper functions to validate your DataFrame before submitting.
 
 ---
 
