@@ -34,8 +34,8 @@ def input_schema() -> StructType:
 
     Mandatory columns (not nullable):
       id_type      → which AdvertiserDataItem identity field this row uses.
-                     Must be one of: tdid, daid, uid2, uid2_token, ramp_id, core_id,
-                     euid, euid_token, id5, net_id, first_id, merkury_id, iqvia_ppid.
+                     Must be one of: TDID, DAID, UID2, UID2Token, EUID, EUIDToken,
+                     RampID, ID5, netID, FirstId, CoreID, MerkuryID, IqviaPPID.
       id_value     → the identifier value for the given id_type.
       segment_name → AdvertiserData.name (audience segment / data element name).
 

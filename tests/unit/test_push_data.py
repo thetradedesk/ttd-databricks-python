@@ -50,7 +50,7 @@ def _make_handler(failed_lines: list | None = None) -> MagicMock:
 
 
 def test_all_rows_succeed_output_has_success_true(spark: SparkSession) -> None:
-    data = [("tdid", "abc123", "seg1"), ("uid2", "def456", "seg2")]
+    data = [("TDID", "abc123", "seg1"), ("UID2", "def456", "seg2")]
     df = spark.createDataFrame(data, _REQUIRED_SCHEMA)
 
     with patch("importlib.import_module", return_value=_make_handler()):
@@ -69,7 +69,7 @@ def test_all_rows_succeed_output_has_success_true(spark: SparkSession) -> None:
 
 
 def test_output_dataframe_has_status_columns(spark: SparkSession) -> None:
-    df = spark.createDataFrame([("tdid", "abc123", "seg1")], _REQUIRED_SCHEMA)
+    df = spark.createDataFrame([("TDID", "abc123", "seg1")], _REQUIRED_SCHEMA)
 
     with patch("importlib.import_module", return_value=_make_handler()):
         result = _make_client(spark).push_data(df, _CONTEXT)
@@ -97,7 +97,7 @@ def test_extra_columns_preserved_in_output(spark: SparkSession) -> None:
             StructField("custom_col", StringType(), True),
         ]
     )
-    df = spark.createDataFrame([("tdid", "abc123", "seg1", "my_value")], schema)
+    df = spark.createDataFrame([("TDID", "abc123", "seg1", "my_value")], schema)
 
     with patch("importlib.import_module", return_value=_make_handler()):
         result = _make_client(spark).push_data(df, _CONTEXT)
@@ -113,7 +113,7 @@ def test_extra_columns_preserved_in_output(spark: SparkSession) -> None:
 
 def test_partial_failure_maps_error_to_correct_row(spark: SparkSession) -> None:
     # Two rows in one batch; item #1 fails, item #2 succeeds
-    data = [("tdid", "abc123", "seg1"), ("tdid", "def456", "seg2")]
+    data = [("TDID", "abc123", "seg1"), ("TDID", "def456", "seg2")]
     df = spark.createDataFrame(data, _REQUIRED_SCHEMA)
 
     failed_line = MagicMock()
@@ -137,7 +137,7 @@ def test_missing_required_column_raises_schema_validation_error(spark: SparkSess
             # missing: segment_name
         ]
     )
-    df = spark.createDataFrame([("tdid", "abc123")], schema)
+    df = spark.createDataFrame([("TDID", "abc123")], schema)
 
     with pytest.raises(TTDSchemaValidationError) as exc_info:
         _make_client(spark).push_data(df, _CONTEXT)
