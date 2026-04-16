@@ -11,15 +11,16 @@ if TYPE_CHECKING:
     from ttd_data import DataClient
     from ttd_data.models import OfflineConversionDataItem
 
-# Maps user_ids[].type (lowercase) → string type code used in UserIdArray
+# Maps user_ids[].type → string type code used in UserIdArray.
+# Keys are uppercased so that lookup is case-insensitive.
 _USER_ID_TYPE_CODE: dict[str, str] = {
-    "tdid": "0",
-    "daid": "1",
-    "uid2": "2",
-    "uid2token": "3",
-    "euid": "4",
-    "euidtoken": "5",
-    "rampid": "6",
+    "TDID": "0",
+    "DAID": "1",
+    "UID2": "2",
+    "UID2TOKEN": "3",
+    "EUID": "4",
+    "EUIDTOKEN": "5",
+    "RAMPID": "6",
 }
 
 
@@ -43,7 +44,7 @@ def build_items(items_data: list[dict[str, Any]]) -> list[OfflineConversionDataI
         raw_user_ids = row.get("user_ids")
         if raw_user_ids:
             kwargs["user_id_array"] = [
-                [_USER_ID_TYPE_CODE[user_id["type"].lower()], user_id["id"]] for user_id in raw_user_ids
+                [_USER_ID_TYPE_CODE[user_id["type"].upper()], user_id["id"]] for user_id in raw_user_ids
             ]
 
         for field in ITEM_OPTIONAL_FIELDS:

@@ -46,7 +46,7 @@ def _make_failed_line(item_number: int, error_code: str = "INVALID", message: st
 
 
 _CONTEXT = AdvertiserContext(advertiser_id="adv123")
-_ROW = {"id_type": "tdid", "id_value": "abc", "segment_name": "seg"}
+_ROW = {"id_type": "TDID", "id_value": "abc", "segment_name": "seg"}
 
 
 # --------------------------------------------------------------------------- #

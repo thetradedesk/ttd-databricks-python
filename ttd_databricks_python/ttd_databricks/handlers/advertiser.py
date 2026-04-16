@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any, Optional, cast
 
 from ttd_databricks_python.ttd_databricks.constants import TTD_DATABRICKS_SDK_ORIGIN_ID
 from ttd_databricks_python.ttd_databricks.contexts import AdvertiserContext
+from ttd_databricks_python.ttd_databricks.id_types import normalize_id_type
 
 if TYPE_CHECKING:
     from ttd_data import DataClient
@@ -26,7 +27,7 @@ def build_items(items_data: list[dict[str, Any]]) -> list[AdvertiserDataItem]:
                 adv_data_kwargs[field] = d[field]
 
         adv_item_kwargs = {
-            d["id_type"]: d["id_value"],
+            normalize_id_type(d["id_type"]): d["id_value"],
             "data": [AdvertiserData(**adv_data_kwargs)],
         }
         for field in ITEM_OPTIONAL_FIELDS:

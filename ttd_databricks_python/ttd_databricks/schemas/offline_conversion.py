@@ -50,9 +50,9 @@ def input_schema() -> StructType:
       user_ids        → OfflineConversionDataItem.UserIdArray in the API request.
                         Required only if impression_id is not provided.
                         Array of structs with fields:
-                          type — identity type name (case-insensitive).
-                                 Must be one of: tdid, daid, uid2, uid2token,
-                                 euid, euidtoken, rampid.
+                          type — identity type name.
+                                 Must be one of: TDID, DAID, UID2, UID2Token,
+                                 EUID, EUIDToken, RampID.
                                  Converted to integer code (0–6) in the request.
                           id   — identity value string.
                         UserIdArrayMetadataFormat is hardcoded to ["type", "id"].

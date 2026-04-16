@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Optional, cast
 
 from ttd_databricks_python.ttd_databricks.contexts import DeletionOptOutThirdPartyContext
+from ttd_databricks_python.ttd_databricks.id_types import normalize_id_type
 
 if TYPE_CHECKING:
     from ttd_data import DataClient
@@ -17,7 +18,7 @@ def build_items(items_data: list[dict[str, Any]]) -> list[PartnerDsrDataItem]:
 
     items = []
     for d in items_data:
-        items.append(PartnerDsrDataItem(**{d["id_type"]: d["id_value"]}))
+        items.append(PartnerDsrDataItem(**{normalize_id_type(d["id_type"]): d["id_value"]}))
     return items
 
 
