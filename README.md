@@ -177,6 +177,8 @@ client.batch_process(
 
 All API calls require a TTD auth token passed at client creation time.
 
+> **Note:** The SDK does not support `TtdSignature` based authentication. Refer to [OpenTTD](https://open.thetradedesk.com/advertiser/docsApp/Foundations/resources/doc/PlatformAuthentication) for instructions on how to create your `TTD-Auth` API token.
+
 ### Factory Method (recommended for notebooks)
 
 ```python
@@ -218,12 +220,12 @@ Each Data API endpoint is represented by a context dataclass that configures the
 
 | Data API Endpoint | Context | OpenTTD API Documentation |
 |---|---|---|
-| `POST /data/advertiser` | `AdvertiserContext` | [OpenTTD](https://open.thetradedesk.com/provider/docsApp/GuidesProvider/audience/doc/post-data-advertiser-external) |
-| `POST /data/thirdparty` | `ThirdPartyContext` | [OpenTTD](https://open.thetradedesk.com/provider/docsApp/GuidesProvider/audience/doc/post-data-thirdparty) |
-| `POST /providerapi/offlineconversion` | `OfflineConversionContext` | [OpenTTD](https://open.thetradedesk.com/advertiser/docsApp/GuidesAdvertiser/data/doc/post-providerapi-offlineconversion) |
-| `POST /data/deletion-optout/advertiser` | `DeletionOptOutAdvertiserContext` | [OpenTTD](https://open.thetradedesk.com/provider/docsApp/GuidesProvider/audience/doc/post-data-deletion-optout-advertiser-external) |
-| `POST /data/deletion-optout/thirdparty` | `DeletionOptOutThirdPartyContext` | [OpenTTD](https://open.thetradedesk.com/provider/docsApp/GuidesProvider/audience/doc/post-data-deletion-optout-thirdparty) |
-| `POST /data/deletion-optout/merchant` | `DeletionOptOutMerchantContext` | [OpenTTD](https://open.thetradedesk.com/provider/docsApp/GuidesProvider/retail/doc/post-data-deletion-optout-merchant) |
+| `POST /data/advertiser` | `AdvertiserContext` | [OpenTTD Documentation](https://open.thetradedesk.com/advertiser/docsApp/GuidesAdvertiser/data/doc/post-data-advertiser-firstparty)<br>[OpenTTD Documentation (External Provider)](https://open.thetradedesk.com/provider/docsApp/GuidesProvider/audience/doc/post-data-advertiser-external) |
+| `POST /data/thirdparty` | `ThirdPartyContext` | [OpenTTD Documentation](https://open.thetradedesk.com/provider/docsApp/GuidesProvider/audience/doc/post-data-thirdparty) |
+| `POST /providerapi/offlineconversion` | `OfflineConversionContext` | [OpenTTD Documentation](https://open.thetradedesk.com/advertiser/docsApp/GuidesAdvertiser/data/doc/post-providerapi-offlineconversion) |
+| `POST /data/deletion-optout/advertiser` | `DeletionOptOutAdvertiserContext` | [OpenTTD Documentation](https://open.thetradedesk.com/advertiser/docsApp/GuidesAdvertiser/data/doc/post-data-deletion-optout-advertiser)<br>[OpenTTD Documentation (External Provider)](https://open.thetradedesk.com/provider/docsApp/GuidesProvider/audience/doc/post-data-deletion-optout-advertiser-external) |
+| `POST /data/deletion-optout/thirdparty` | `DeletionOptOutThirdPartyContext` | [OpenTTD Documentation ](https://open.thetradedesk.com/provider/docsApp/GuidesProvider/audience/doc/post-data-deletion-optout-thirdparty) |
+| `POST /data/deletion-optout/merchant` | `DeletionOptOutMerchantContext` | [OpenTTD Documentation](https://open.thetradedesk.com/provider/docsApp/GuidesProvider/retail/doc/post-data-deletion-optout-merchant) |
 
 ### First-Party Data — `/data/advertiser`
 
