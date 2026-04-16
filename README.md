@@ -177,7 +177,7 @@ client.batch_process(
 
 All API calls require a TTD auth token passed at client creation time.
 
-> **Note:** The SDK does not support `TtdSignature` based authentication. Refer to [OpenTTD](https://open.thetradedesk.com/advertiser/docsApp/Foundations/resources/doc/PlatformAuthentication) for instructions on how to create your `TTD-Auth` API token.
+> **Note:** The SDK does not support `TtdSignature` based authentication. Refer to [OpenTTD](https://open.thetradedesk.com/advertiser/docsApp/Foundations/resources/doc/PlatformAuthentication) for instructions on how to create your `TTD-Auth` API token (select `Data API` as the `Application`).
 
 ### Factory Method (recommended for notebooks)
 
