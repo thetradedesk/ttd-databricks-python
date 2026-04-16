@@ -58,6 +58,11 @@ ignore = [
 [tool.ruff.lint.isort]
 known-first-party = ["ttd_databricks_python"]
 
+[tool.pytest.ini_options]
+markers = [
+    "spark: marks tests that require a running SparkSession (deselect with '-m \"not spark\"')",
+]
+
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
