@@ -50,12 +50,13 @@ def call_api(
     Raises APIError / NoResponseError on unrecoverable errors — caller is
     responsible for converting these to the appropriate exception type.
     """
-    from ttd_data.errors import AdvertiserDataServerResponseError
     from ttd_data.models import DataOrigin, DataOriginType
     from ttd_data.types import UNSET
 
     sdk_origin = DataOrigin(id=TTD_DATABRICKS_SDK_ORIGIN_ID, type=DataOriginType.INTEGRATION)
     data_origins = (context.data_origins or []) + [sdk_origin]
+
+    from ttd_data.errors import AdvertiserDataServerResponseError
 
     failed_lines: list[Any] = []
     try:
@@ -75,6 +76,7 @@ def call_api(
                 failed_lines = cast(list[Any], fl)
     except AdvertiserDataServerResponseError as exc:
         fl = exc.data.failed_lines
-        if fl is not UNSET and fl is not None:
-            failed_lines = cast(list[Any], fl)
+        if fl is UNSET or fl is None or not fl:
+            raise
+        failed_lines = cast(list[Any], fl)
     return failed_lines

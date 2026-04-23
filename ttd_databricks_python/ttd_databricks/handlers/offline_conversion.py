@@ -86,7 +86,6 @@ def call_api(
     Raises APIError / NoResponseError on unrecoverable errors — caller is
     responsible for converting these to the appropriate exception type.
     """
-    from ttd_data.errors import OfflineConversionDataServerResponseError
     from ttd_data.models import DataOrigin, DataOriginType
     from ttd_data.types import UNSET
 
@@ -94,6 +93,8 @@ def call_api(
     data_origins = (context.data_origins or []) + [sdk_origin]
 
     has_user_id_array = any(item.user_id_array is not UNSET and item.user_id_array is not None for item in items)
+
+    from ttd_data.errors import OfflineConversionDataServerResponseError
 
     failed_lines: list[Any] = []
     try:
@@ -113,6 +114,7 @@ def call_api(
                 failed_lines = cast(list[Any], fl)
     except OfflineConversionDataServerResponseError as exc:
         fl = exc.data.failed_lines
-        if fl is not UNSET and fl is not None:
-            failed_lines = cast(list[Any], fl)
+        if fl is UNSET or fl is None or not fl:
+            raise
+        failed_lines = cast(list[Any], fl)
     return failed_lines

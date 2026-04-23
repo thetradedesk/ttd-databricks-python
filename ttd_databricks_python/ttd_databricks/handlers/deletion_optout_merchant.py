@@ -54,6 +54,7 @@ def call_api(
                 failed_lines = cast(list[Any], fl)
     except MerchantDsrResponseError as exc:
         fl = exc.data.failed_lines
-        if fl is not UNSET and fl is not None:
-            failed_lines = cast(list[Any], fl)
+        if fl is UNSET or fl is None or not fl:
+            raise
+        failed_lines = cast(list[Any], fl)
     return failed_lines
