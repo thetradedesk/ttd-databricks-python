@@ -34,26 +34,20 @@ def call_api(
     Raises APIError / NoResponseError on unrecoverable errors — caller is
     responsible for converting these to the appropriate exception type.
     """
-    from ttd_data.errors import MerchantDsrResponseError
     from ttd_data.types import UNSET
 
     failed_lines: list[Any] = []
-    try:
-        response = client.deletion_opt_out.data_subject_request_merchant_data(
-            ttd_auth=api_token,
-            merchant_id=context.merchant_id,
-            items=items,
-            data_load_trace_id=data_load_trace_id if data_load_trace_id is not None else UNSET,
-            request_type=context.request_type,
-            server_url=context.base_url_override,
-        )
-        server_response = response.merchant_dsr_response
-        if server_response is not None:
-            fl = server_response.failed_lines
-            if fl is not UNSET and fl is not None:
-                failed_lines = cast(list[Any], fl)
-    except MerchantDsrResponseError as exc:
-        fl = exc.data.failed_lines
+    response = client.deletion_opt_out.data_subject_request_merchant_data(
+        ttd_auth=api_token,
+        merchant_id=context.merchant_id,
+        items=items,
+        data_load_trace_id=data_load_trace_id if data_load_trace_id is not None else UNSET,
+        request_type=context.request_type,
+        server_url=context.base_url_override,
+    )
+    server_response = response.merchant_dsr_response
+    if server_response is not None:
+        fl = server_response.failed_lines
         if fl is not UNSET and fl is not None:
             failed_lines = cast(list[Any], fl)
     return failed_lines

@@ -385,10 +385,11 @@ class TtdDatabricksClient:
         Raises:
             TTDApiError: On unrecoverable errors (4xx client errors, unexpected exceptions).
         """
+        import http
         import importlib
 
         import httpx
-        from ttd_data.errors import APIError, NoResponseError
+        from ttd_data.errors import DataError, NoResponseError
 
         from ttd_databricks_python.ttd_databricks.exceptions import TTDApiError
         from ttd_databricks_python.ttd_databricks.utils import parse_failed_lines
@@ -408,12 +409,18 @@ class TtdDatabricksClient:
             NoResponseError,
         ) as exc:
             return fail_all(None, str(exc))
-        except APIError as exc:
-            if exc.status_code >= 500:
-                return fail_all(str(exc.status_code), str(exc))
+        except DataError as exc:
+            try:
+                error_code = http.HTTPStatus(exc.status_code).phrase
+            except ValueError:
+                error_code = str(exc.status_code)
+            if exc.status_code >= 500 or exc.status_code == 429:
+                # Transient error (server error or rate limit) — return all rows as failed.
+                return fail_all(error_code, exc.body)
+            # 4xx client error — relay to caller.
             raise TTDApiError(
                 status_code=exc.status_code,
-                response_text=str(exc),
+                response_text=exc.body,
                 batch_index=batch_index,
             ) from exc
         except Exception as exc:

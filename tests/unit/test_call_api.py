@@ -5,7 +5,9 @@ _call_api :
   2. Maps failed_lines (by item number) to per-row result dicts.
      Rows with a parseable item number get their specific error.
      Rows without one fall back to the unattributable error (if any).
-  3. Raises TTDApiError on APIError / NoResponseError from the handler.
+  3. On 5xx or 429, marks all rows as failed (transient — caller can retry).
+     On 4xx (except 429), raises TTDApiError — unrecoverable client error.
+  4. Raises TTDApiError on unexpected non-HTTP exceptions.
 
 The handler module import is patched so no real API calls are made.
 """
@@ -17,8 +19,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+import httpx
+
 from ttd_data import DataClient
-from ttd_data.errors import NoResponseError
+from ttd_data.errors import DataError, NoResponseError
 
 from ttd_databricks_python.ttd_databricks.contexts import AdvertiserContext
 from ttd_databricks_python.ttd_databricks.exceptions import TTDApiError
@@ -177,6 +181,47 @@ def test_no_response_error_from_handler_returns_failed_results():
         assert len(results) == 1
         assert results[0]["success"] is False
         assert results[0]["error_message"] == "No response"
+
+
+def test_4xx_error_raises_ttd_api_error():
+    client = _make_client()
+    rows = _make_rows(_ROW, _ROW)
+    mock_handler = MagicMock()
+    mock_handler.build_items.return_value = [MagicMock(), MagicMock()]
+
+    raw = MagicMock(spec=httpx.Response)
+    raw.status_code = 400
+    raw.text = "This endpoint is not configured to accept data from tracking tag foo"
+    raw.headers = httpx.Headers({})
+    mock_handler.call_api.side_effect = DataError("batch error", raw)
+
+    with patch("importlib.import_module", return_value=mock_handler):
+        with pytest.raises(TTDApiError) as exc_info:
+            client._call_api(_CONTEXT, rows, batch_index=2)
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.batch_index == 2
+    assert "not configured" in exc_info.value.response_text
+
+
+def test_429_rate_limit_returns_all_rows_failed_not_raises():
+    # 429 must be treated as transient (same as 5xx), not as a 4xx that stops the job.
+    client = _make_client()
+    rows = _make_rows(_ROW, _ROW)
+    mock_handler = MagicMock()
+    mock_handler.build_items.return_value = [MagicMock(), MagicMock()]
+
+    raw = MagicMock(spec=httpx.Response)
+    raw.status_code = 429
+    raw.text = "Too Many Requests"
+    raw.headers = httpx.Headers({})
+    mock_handler.call_api.side_effect = DataError("rate limited", raw)
+
+    with patch("importlib.import_module", return_value=mock_handler):
+        results = client._call_api(_CONTEXT, rows, batch_index=0)
+
+    assert all(r["success"] is False for r in results)
+    assert all(r["error_code"] == "Too Many Requests" for r in results)
 
 
 def test_unexpected_exception_from_handler_raises_ttd_api_error_with_message():
