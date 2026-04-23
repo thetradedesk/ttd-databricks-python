@@ -50,7 +50,6 @@ def call_api(
     Raises APIError / NoResponseError on unrecoverable errors — caller is
     responsible for converting these to the appropriate exception type.
     """
-    from ttd_data.errors import AdvertiserDataServerResponseError
     from ttd_data.models import DataOrigin, DataOriginType
     from ttd_data.types import UNSET
 
@@ -58,23 +57,18 @@ def call_api(
     data_origins = (context.data_origins or []) + [sdk_origin]
 
     failed_lines: list[Any] = []
-    try:
-        response = client.advertiser.ingest_advertiser_data(
-            advertiser_id=context.advertiser_id,
-            ttd_auth=api_token,
-            data_provider_id=context.data_provider_id if context.data_provider_id is not None else UNSET,
-            items=items,
-            data_load_trace_id=data_load_trace_id if data_load_trace_id is not None else UNSET,
-            data_origins=data_origins,
-            server_url=context.base_url_override,
-        )
-        server_response = response.advertiser_data_server_response
-        if server_response is not None:
-            fl = server_response.failed_lines
-            if fl is not UNSET and fl is not None:
-                failed_lines = cast(list[Any], fl)
-    except AdvertiserDataServerResponseError as exc:
-        fl = exc.data.failed_lines
+    response = client.advertiser.ingest_advertiser_data(
+        advertiser_id=context.advertiser_id,
+        ttd_auth=api_token,
+        data_provider_id=context.data_provider_id if context.data_provider_id is not None else UNSET,
+        items=items,
+        data_load_trace_id=data_load_trace_id if data_load_trace_id is not None else UNSET,
+        data_origins=data_origins,
+        server_url=context.base_url_override,
+    )
+    server_response = response.advertiser_data_server_response
+    if server_response is not None:
+        fl = server_response.failed_lines
         if fl is not UNSET and fl is not None:
             failed_lines = cast(list[Any], fl)
     return failed_lines

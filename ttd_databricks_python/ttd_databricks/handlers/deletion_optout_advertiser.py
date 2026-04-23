@@ -34,27 +34,21 @@ def call_api(
     Raises APIError / NoResponseError on unrecoverable errors — caller is
     responsible for converting these to the appropriate exception type.
     """
-    from ttd_data.errors import AdvertiserDsrResponseError
     from ttd_data.types import UNSET
 
     failed_lines: list[Any] = []
-    try:
-        response = client.deletion_opt_out.data_subject_request_advertiser_data(
-            ttd_auth=api_token,
-            advertiser_id=context.advertiser_id,
-            data_provider_id=context.data_provider_id if context.data_provider_id is not None else UNSET,
-            items=items,
-            data_load_trace_id=data_load_trace_id if data_load_trace_id is not None else UNSET,
-            request_type=context.request_type,
-            server_url=context.base_url_override,
-        )
-        server_response = response.advertiser_dsr_response
-        if server_response is not None:
-            fl = server_response.failed_lines
-            if fl is not UNSET and fl is not None:
-                failed_lines = cast(list[Any], fl)
-    except AdvertiserDsrResponseError as exc:
-        fl = exc.data.failed_lines
+    response = client.deletion_opt_out.data_subject_request_advertiser_data(
+        ttd_auth=api_token,
+        advertiser_id=context.advertiser_id,
+        data_provider_id=context.data_provider_id if context.data_provider_id is not None else UNSET,
+        items=items,
+        data_load_trace_id=data_load_trace_id if data_load_trace_id is not None else UNSET,
+        request_type=context.request_type,
+        server_url=context.base_url_override,
+    )
+    server_response = response.advertiser_dsr_response
+    if server_response is not None:
+        fl = server_response.failed_lines
         if fl is not UNSET and fl is not None:
             failed_lines = cast(list[Any], fl)
     return failed_lines

@@ -58,23 +58,18 @@ def call_api(
     data_origins = (context.data_origins or []) + [sdk_origin]
 
     failed_lines: list[Any] = []
-    try:
-        response = client.third_party.ingest_third_party_data(
-            ttd_auth=api_token,
-            data_provider_id=context.data_provider_id,
-            items=items,
-            is_user_id_already_hashed=context.is_user_id_already_hashed,
-            data_load_trace_id=data_load_trace_id if data_load_trace_id is not None else UNSET,
-            data_origins=data_origins,
-            server_url=context.base_url_override,
-        )
-        server_response = response.third_party_data_server_response
-        if server_response is not None:
-            fl = server_response.failed_lines
-            if fl is not UNSET and fl is not None:
-                failed_lines = cast(list[Any], fl)
-    except ThirdPartyDataServerResponseError as exc:
-        fl = exc.data.failed_lines
+    response = client.third_party.ingest_third_party_data(
+        ttd_auth=api_token,
+        data_provider_id=context.data_provider_id,
+        items=items,
+        is_user_id_already_hashed=context.is_user_id_already_hashed,
+        data_load_trace_id=data_load_trace_id if data_load_trace_id is not None else UNSET,
+        data_origins=data_origins,
+        server_url=context.base_url_override,
+    )
+    server_response = response.third_party_data_server_response
+    if server_response is not None:
+        fl = server_response.failed_lines
         if fl is not UNSET and fl is not None:
             failed_lines = cast(list[Any], fl)
     return failed_lines
