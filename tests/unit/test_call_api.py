@@ -3,7 +3,7 @@
 _call_api :
   1. Delegates item-building and the API call to the endpoint handler module.
   2. Maps failed_lines (by item number) to per-row result dicts.
-     Rows with a parseable item number get their specific error.
+     Rows with an item_number get their specific error.
      Rows without one fall back to the unattributable error (if any).
   3. On 5xx, marks all rows as failed (transient — caller can retry).
      On 4xx, raises TTDApiError — unrecoverable client error.
@@ -44,6 +44,7 @@ def _make_rows(*dicts: dict[str, Any]) -> list[MagicMock]:
 
 def _make_failed_line(item_number: int, error_code: str = "INVALID", message: str | None = None) -> MagicMock:
     line = MagicMock()
+    line.item_number = str(item_number)
     line.message = f"Validation failed for item #{item_number}" if message is None else message
     line.error_code.value = error_code
     return line
@@ -94,11 +95,12 @@ def test_failed_row_is_marked_with_success_false_and_error_details():
 
 
 def test_only_unattributable_error_applies_fallback_to_all_rows():
-    # If the API returns an error line with no "item #N", we can't attribute it to a specific
+    # If the API returns an error line with no item_number, we can't attribute it to a specific
     # row — the error is used as a fallback applied to every row in the batch.
     client = _make_client()
     rows = _make_rows(_ROW, _ROW)
     failed = MagicMock()
+    failed.item_number = None
     failed.message = "General error, no item number"
     failed.error_code.value = "UNKNOWN"
     mock_handler = MagicMock()
@@ -114,13 +116,14 @@ def test_only_unattributable_error_applies_fallback_to_all_rows():
 
 
 def test_attributable_row_gets_specific_error_others_get_unattributable_fallback():
-    # Row with a parseable item number gets its own error; rows without one fall back
+    # Row with an item_number gets its own error; rows without one fall back
     # to the unattributable error. Both rows still fail, but with different details.
     client = _make_client()
     rows = _make_rows(_ROW, _ROW)
     mock_handler = MagicMock()
     mock_handler.build_items.return_value = [MagicMock(), MagicMock()]
     unattributable = MagicMock()
+    unattributable.item_number = None
     unattributable.message = "General error, no item number"
     unattributable.error_code.value = "UNKNOWN"
     mock_handler.call_api.return_value = [
@@ -138,11 +141,12 @@ def test_attributable_row_gets_specific_error_others_get_unattributable_fallback
 
 
 def test_failed_line_with_null_message_and_code_fails_all_rows():
-    # A failed line with no item number, no message, and no error_code still triggers
+    # A failed line with no item_number, no message, and no error_code still triggers
     # the fail-all path by setting the unattributable error to all rows.
     client = _make_client()
     rows = _make_rows(_ROW, _ROW)
     null_failed = MagicMock()
+    null_failed.item_number = None
     null_failed.message = None
     null_failed.error_code.value = None
     mock_handler = MagicMock()
