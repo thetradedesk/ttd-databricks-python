@@ -47,16 +47,16 @@ def call_api(
 ) -> list[Any]:
     """Call ingest_advertiser_data. Returns failed_lines (may be empty).
 
+    Raises AdvertiserDataServerResponseError on 400 responses without failed_lines.
     Raises APIError / NoResponseError on unrecoverable errors — caller is
     responsible for converting these to the appropriate exception type.
     """
+    from ttd_data.errors import AdvertiserDataServerResponseError
     from ttd_data.models import DataOrigin, DataOriginType
     from ttd_data.types import UNSET
 
     sdk_origin = DataOrigin(id=TTD_DATABRICKS_SDK_ORIGIN_ID, type=DataOriginType.INTEGRATION)
     data_origins = (context.data_origins or []) + [sdk_origin]
-
-    from ttd_data.errors import AdvertiserDataServerResponseError
 
     failed_lines: list[Any] = []
     try:

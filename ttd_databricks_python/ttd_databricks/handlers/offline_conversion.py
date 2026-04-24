@@ -83,9 +83,11 @@ def call_api(
 ) -> list[Any]:
     """Call ingest_offline_conversion_data. Returns failed_lines (may be empty).
 
+    Raises OfflineConversionDataServerResponseError on 400 responses without failed_lines.
     Raises APIError / NoResponseError on unrecoverable errors — caller is
     responsible for converting these to the appropriate exception type.
     """
+    from ttd_data.errors import OfflineConversionDataServerResponseError
     from ttd_data.models import DataOrigin, DataOriginType
     from ttd_data.types import UNSET
 
@@ -93,8 +95,6 @@ def call_api(
     data_origins = (context.data_origins or []) + [sdk_origin]
 
     has_user_id_array = any(item.user_id_array is not UNSET and item.user_id_array is not None for item in items)
-
-    from ttd_data.errors import OfflineConversionDataServerResponseError
 
     failed_lines: list[Any] = []
     try:

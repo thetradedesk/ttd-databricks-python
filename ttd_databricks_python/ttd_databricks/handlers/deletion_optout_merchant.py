@@ -31,6 +31,7 @@ def call_api(
 ) -> list[Any]:
     """Call data_subject_request_merchant_data. Returns failed_lines (may be empty).
 
+    Raises MerchantDsrResponseError on 400 responses without failed_lines.
     Raises APIError / NoResponseError on unrecoverable errors — caller is
     responsible for converting these to the appropriate exception type.
     """

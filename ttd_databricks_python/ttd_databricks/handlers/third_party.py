@@ -47,6 +47,7 @@ def call_api(
 ) -> list[Any]:
     """Call ingest_third_party_data. Returns failed_lines (may be empty).
 
+    Raises ThirdPartyDataServerResponseError on 400 responses without failed_lines.
     Raises APIError / NoResponseError on unrecoverable errors — caller is
     responsible for converting these to the appropriate exception type.
     """
