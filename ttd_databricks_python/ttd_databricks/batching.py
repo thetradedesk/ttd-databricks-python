@@ -53,12 +53,13 @@ def process_partitions(
     handler_module = context.endpoint.handler_module
 
     def partition_to_results(rows: Any) -> Iterator[tuple[Any, ...]]:
+        import http
         import importlib
         from datetime import datetime, timezone
 
         import httpx
         from ttd_data import DataClient
-        from ttd_data.errors import APIError, NoResponseError
+        from ttd_data.errors import DataError, NoResponseError
 
         from ttd_databricks_python.ttd_databricks.utils import parse_failed_lines
 
@@ -98,10 +99,11 @@ def process_partitions(
                 # Mark batch as failed and continue.
                 yield from fail_batch(None, str(exc))
                 return
-            except APIError as exc:
+            except DataError as exc:
+                error_code = http.HTTPStatus(exc.status_code).phrase
                 if exc.status_code >= 500:
                     # Transient server error, mark batch as failed and continue.
-                    yield from fail_batch(str(exc.status_code), str(exc))
+                    yield from fail_batch(error_code, exc.body)
                     return
                 # 4xx errors (auth, bad request) — fail the job.
                 raise RuntimeError(f"TTD API unrecoverable error: {exc}") from exc
