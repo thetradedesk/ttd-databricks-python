@@ -2,22 +2,13 @@
 
 from __future__ import annotations
 
-import re
 from typing import Any, Optional
-
-
-def extract_item_number(message: Optional[str]) -> Optional[int]:
-    """Extract 1-based item number from an API error message (e.g. 'Invalid DAID, item #2' → 2)."""
-    if not message:
-        return None
-    match = re.search(r"item #(\d+)", message, re.IGNORECASE)
-    return int(match.group(1)) if match else None
 
 
 def parse_failed_lines(failed_lines: list[Any], row_count: int) -> list[dict[str, Any]]:
     """Map API failed_lines to per-row result dicts with success, error_code, error_message.
 
-    Rows with a parseable item number get their specific error.
+    Rows with an item_number get their specific error.
     Rows without one fall back to the unattributable error (if any).
     Rows with no error are marked as success.
     """
@@ -31,7 +22,9 @@ def parse_failed_lines(failed_lines: list[Any], row_count: int) -> list[dict[str
     for line in failed_lines:
         message = line.message if line.message is not UNSET else None
         error_code = line.error_code.value if (line.error_code and line.error_code is not UNSET) else None
-        item_number = extract_item_number(message)
+        item_number = (
+            int(line.item_number) if (line.item_number is not UNSET and line.item_number is not None) else None
+        )
         if item_number is not None:
             failed_item_mapping[item_number] = {"error_code": error_code, "error_message": message}
         else:
