@@ -77,6 +77,7 @@ def input_schema() -> StructType:
     """
     from pyspark.sql.types import (
         ArrayType,
+        MapType,
         StringType,
         StructField,
         StructType,
@@ -89,18 +90,11 @@ def input_schema() -> StructType:
             StructField("tracking_tag_id", StringType(), False),
             StructField("timestamp_utc", TimestampType(), False),
             # Optional
-            StructField(
-                "user_ids",
-                ArrayType(
-                    StructType(
-                        [
-                            StructField("type", StringType(), True),
-                            StructField("id", StringType(), True),
-                        ]
-                    )
-                ),
-                True,
-            ),
+            # user_ids, line_items and privacy_settings use MapType so the schema
+            # matches what Spark infers from Python list-of-dicts. StructType would
+            # require users to provide an explicit schema when writing, causing
+            # DELTA_FAILED_TO_MERGE_FIELDS on saveAsTable.
+            StructField("user_ids", ArrayType(MapType(StringType(), StringType())), True),
             StructField("data_provider_user_id", StringType(), True),
             StructField("cookie_mapping_partner_id", StringType(), True),
             StructField("order_id", StringType(), True),
@@ -123,33 +117,7 @@ def input_schema() -> StructType:
             StructField("td8", StringType(), True),
             StructField("td9", StringType(), True),
             StructField("td10", StringType(), True),
-            StructField(
-                "line_items",
-                ArrayType(
-                    StructType(
-                        [
-                            StructField("item_code", StringType(), True),
-                            StructField("name", StringType(), True),
-                            StructField("qty", StringType(), True),
-                            StructField("price", StringType(), True),
-                            StructField("cat", StringType(), True),
-                        ]
-                    )
-                ),
-                True,
-            ),
-            StructField(
-                "privacy_settings",
-                ArrayType(
-                    StructType(
-                        [
-                            StructField("privacy_type", StringType(), True),
-                            StructField("is_applicable", StringType(), True),
-                            StructField("consent_string", StringType(), True),
-                        ]
-                    )
-                ),
-                True,
-            ),
+            StructField("line_items", ArrayType(MapType(StringType(), StringType())), True),
+            StructField("privacy_settings", ArrayType(MapType(StringType(), StringType())), True),
         ]
     )

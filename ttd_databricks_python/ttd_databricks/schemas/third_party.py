@@ -42,7 +42,7 @@ def input_schema() -> StructType:
       ttl_in_minutes            → ThirdPartyData.TtlInMinutes
     """
     from pyspark.sql.types import (
-        IntegerType,
+        LongType,
         StringType,
         StructField,
         StructType,
@@ -58,6 +58,6 @@ def input_schema() -> StructType:
             # Optional
             StructField("cookie_mapping_partner_id", StringType(), True),
             StructField("timestamp_utc", TimestampType(), True),
-            StructField("ttl_in_minutes", IntegerType(), True),
+            StructField("ttl_in_minutes", LongType(), True),
         ]
     )

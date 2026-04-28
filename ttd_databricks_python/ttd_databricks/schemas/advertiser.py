@@ -49,7 +49,7 @@ def input_schema() -> StructType:
     """
     from pyspark.sql.types import (
         DoubleType,
-        IntegerType,
+        LongType,
         StringType,
         StructField,
         StructType,
@@ -65,7 +65,7 @@ def input_schema() -> StructType:
             # Optional
             StructField("cookie_mapping_partner_id", StringType(), True),
             StructField("timestamp_utc", TimestampType(), True),
-            StructField("ttl_in_minutes", IntegerType(), True),
+            StructField("ttl_in_minutes", LongType(), True),
             StructField("base_bid_cpm", DoubleType(), True),
             StructField("base_bid_cpm_metadata", StringType(), True),
             StructField("bid_factor", DoubleType(), True),
