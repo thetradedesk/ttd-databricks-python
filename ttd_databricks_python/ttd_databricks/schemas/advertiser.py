@@ -35,7 +35,11 @@ def input_schema() -> StructType:
     Mandatory columns (not nullable):
       id_type      → which AdvertiserDataItem identity field this row uses.
                      Must be one of: TDID, DAID, UID2, UID2Token, EUID, EUIDToken,
-                     RampID, ID5, netID, FirstId, CoreID, MerkuryID, IqviaPPID.
+                     RampID, ID5, netID, FirstId, CoreID, MerkuryID, IqviaPPID,
+                     Email, Phone, HashedEmail, HashedPhone.
+                     Email/Phone/HashedEmail/HashedPhone are resolved to a UID2/EUID
+                     client-side by ttd-data sdk and mapping is stored under
+                     `uid2_resolutions` column of output table.
       id_value     → the identifier value for the given id_type.
       segment_name → AdvertiserData.name (audience segment / data element name).
 

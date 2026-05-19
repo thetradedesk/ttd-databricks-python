@@ -2,26 +2,49 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Optional, cast
+from typing import TYPE_CHECKING, Any, Optional
 
 from ttd_databricks_python.ttd_databricks.constants import TTD_DATABRICKS_SDK_ORIGIN_ID
 from ttd_databricks_python.ttd_databricks.contexts import OfflineConversionContext
+from ttd_databricks_python.ttd_databricks.handlers._common import (
+    extract_failed_lines_from_error,
+    extract_response_data,
+)
+from ttd_databricks_python.ttd_databricks.id_types import RAW_PII_ID_TYPES
 
 if TYPE_CHECKING:
     from ttd_data import DataClient
     from ttd_data.models import OfflineConversionDataItem
+    from ttd_data.uid2 import UID2Resolution
 
-# Maps user_ids[].type → string type code used in UserIdArray.
-# Keys are uppercased so that lookup is case-insensitive.
-_USER_ID_TYPE_CODE: dict[str, str] = {
-    "TDID": "0",
-    "DAID": "1",
-    "UID2": "2",
-    "UID2TOKEN": "3",
-    "EUID": "4",
-    "EUIDTOKEN": "5",
-    "RAMPID": "6",
-}
+__all__ = ["build_items", "call_api", "collect_raw_pii_ids_per_row"]
+
+
+def _user_id_type(type_name: str) -> Any:
+    """Map a user-facing user_ids[].type name to a `ttd_data.uid2.UserIdType` member.
+
+    The enum subclasses `str` for wire compatibility with `List[List[str]]`.
+    """
+    from ttd_data import UserIdType
+
+    mapping = {
+        "TDID": UserIdType.TDID,
+        "DAID": UserIdType.DAID,
+        "UID2": UserIdType.UID2,
+        "UID2TOKEN": UserIdType.UID2_TOKEN,
+        "EUID": UserIdType.EUID,
+        "EUIDTOKEN": UserIdType.EUID_TOKEN,
+        "RAMPID": UserIdType.RAMP_ID,
+        "EMAIL": UserIdType.EMAIL,
+        "PHONE": UserIdType.PHONE,
+        "HASHEDEMAIL": UserIdType.HASHED_EMAIL,
+        "HASHEDPHONE": UserIdType.HASHED_PHONE,
+    }
+    key = type_name.upper()
+    if key not in mapping:
+        valid = ", ".join(sorted(mapping))
+        raise ValueError(f"Unknown user_ids type {type_name!r}. Must be one of: {valid}.")
+    return mapping[key]
 
 
 def build_items(items_data: list[dict[str, Any]]) -> list[OfflineConversionDataItem]:
@@ -43,9 +66,7 @@ def build_items(items_data: list[dict[str, Any]]) -> list[OfflineConversionDataI
 
         raw_user_ids = row.get("user_ids")
         if raw_user_ids:
-            kwargs["user_id_array"] = [
-                [_USER_ID_TYPE_CODE[user_id["type"].upper()], user_id["id"]] for user_id in raw_user_ids
-            ]
+            kwargs["user_id_array"] = [[_user_id_type(user_id["type"]), user_id["id"]] for user_id in raw_user_ids]
 
         for field in ITEM_OPTIONAL_FIELDS:
             value = row.get(field)
@@ -74,14 +95,28 @@ def build_items(items_data: list[dict[str, Any]]) -> list[OfflineConversionDataI
     return items
 
 
+def collect_raw_pii_ids_per_row(items_data: list[dict[str, Any]]) -> list[list[str]]:
+    """Per-row raw PII identifiers from `user_ids`, in submission order.
+
+    Output aligns positionally with the row's `uid2_resolutions` array.
+    """
+    out: list[list[str]] = []
+    for row in items_data:
+        raw_user_ids = row.get("user_ids") or []
+        out.append(
+            [entry["id"] for entry in raw_user_ids if entry["type"] and entry["type"].upper() in RAW_PII_ID_TYPES]
+        )
+    return out
+
+
 def call_api(
     client: DataClient,
     context: OfflineConversionContext,
     items: list[OfflineConversionDataItem],
     api_token: str,
     data_load_trace_id: Optional[str] = None,
-) -> list[Any]:
-    """Call ingest_offline_conversion_data. Returns failed_lines (may be empty).
+) -> tuple[list[Any], dict[str, UID2Resolution]]:
+    """Call ingest_offline_conversion_data. Returns (failed_lines, identity_resolutions).
 
     Raises OfflineConversionDataServerResponseError on 400 responses without failed_lines.
     Raises APIError / NoResponseError on unrecoverable errors — caller is
@@ -96,7 +131,6 @@ def call_api(
 
     has_user_id_array = any(item.user_id_array is not UNSET and item.user_id_array is not None for item in items)
 
-    failed_lines: list[Any] = []
     try:
         response = client.offline_conversion.ingest_offline_conversion_data(
             ttd_auth=api_token,
@@ -107,14 +141,9 @@ def call_api(
             data_origins=data_origins,
             server_url=context.base_url_override,
         )
-        server_response = response.offline_conversion_data_server_response
-        if server_response is not None:
-            fl = server_response.failed_lines
-            if fl is not UNSET and fl is not None:
-                failed_lines = cast(list[Any], fl)
+        return extract_response_data(response, "offline_conversion_data_server_response")
     except OfflineConversionDataServerResponseError as exc:
-        fl = exc.data.failed_lines
-        if fl is UNSET or fl is None or not fl:
+        failed_lines = extract_failed_lines_from_error(exc)
+        if not failed_lines:
             raise
-        failed_lines = cast(list[Any], fl)
-    return failed_lines
+        return failed_lines, {}

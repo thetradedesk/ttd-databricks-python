@@ -15,6 +15,7 @@ from ttd_databricks_python.ttd_databricks.endpoints import TTDEndpoint
 
 if TYPE_CHECKING:
     from pyspark.sql import DataFrame, Row, SparkSession
+    from ttd_data.uid2 import UID2Config
 
 
 class TtdDatabricksClient:
@@ -38,6 +39,7 @@ class TtdDatabricksClient:
         data_api_client: DataClient,
         api_token: str,
         spark: Optional[SparkSession] = None,
+        uid2_config: Optional[UID2Config] = None,
     ) -> None:
         """
         Initialize TTD Databricks client via dependency injection.
@@ -47,6 +49,9 @@ class TtdDatabricksClient:
         Dependency Injection pattern:
         - data_api_client: Required. Injected DataClient instance (from ttd-data package).
         - api_token: Required. TTD-Auth token passed to each API call for authentication.
+        - uid2_config: Optional. Forwarded to per-worker DataClient in `batch_process`
+          (DataClient instances aren't serializable, so workers build their own).
+          Not used by `push_data` — pass `uid2_config` to `data_api_client` directly for that path.
 
         Note: DataClient is from the external ttd-data package.
         For factory pattern (creating clients from tokens), use `from_params()` class method.
@@ -54,13 +59,14 @@ class TtdDatabricksClient:
         self._data_api_client = data_api_client
         self._api_token = api_token
         self._spark = spark
+        self._uid2_config = uid2_config
 
     @classmethod
     def from_params(
         cls,
         api_token: str,
         spark: Optional[SparkSession] = None,
-        uid2_key: Optional[str] = None,
+        uid2_config: Optional[UID2Config] = None,
         server_url: Optional[str] = None,
     ) -> TtdDatabricksClient:
         """
@@ -70,18 +76,19 @@ class TtdDatabricksClient:
 
         - api_token: Required. TTD API token for authentication (TTD-Auth header).
         - spark: Optional. SparkSession. Auto-detected from Databricks context if not provided.
-        - uid2_key: Optional. Reserved for future UID2 client support. Currently unused.
+        - uid2_config: Optional. Enables client-side resolution of raw PII identifiers
+          (Email/Phone/HashedEmail/HashedPhone) to UID2/EUID. Wired into both the
+          driver DataClient and the worker config used by `batch_process`.
         - server_url: Optional. Override the default TTD Data API server URL.
 
         Returns: TtdDatabricksClient instance with internally created DataClient.
         """
-        # DataClient uses default server URL (https://usw-data.adsrvr.org) unless overridden.
-        # Authentication (api_token) is passed per API call.
-        data_api_client = DataClient(server_url=server_url)
+        data_api_client = DataClient(server_url=server_url, uid2_config=uid2_config)
         return cls(
             data_api_client=data_api_client,
             api_token=api_token,
             spark=spark,
+            uid2_config=uid2_config,
         )
 
     # ------------------------------------------------------------------
@@ -100,7 +107,8 @@ class TtdDatabricksClient:
 
         Validates that mandatory TTD columns are present for the context's endpoint.
 
-        Returns: Original columns + success, error_code, error_message, processed_timestamp
+        Returns: Original columns + success, error_code, error_message, processed_timestamp,
+        and `uid2_resolutions` (array<struct>, empty unless `uid2_config` was provided).
 
         - df: Input Spark DataFrame. Must contain all non-nullable columns for context.endpoint.
           Nullable columns may be omitted — they will be filled with null automatically.
@@ -127,9 +135,7 @@ class TtdDatabricksClient:
 
             for row, result in zip(batch, api_results, strict=True):
                 merged = row.asDict()
-                merged["success"] = result["success"]
-                merged["error_code"] = result["error_code"]
-                merged["error_message"] = result["error_message"]
+                merged.update(result)
                 merged["processed_timestamp"] = timestamp
                 result_rows.append(merged)
 
@@ -205,7 +211,14 @@ class TtdDatabricksClient:
 
         output_schema = get_output_schema(df.schema)
         output_df = process_partitions(
-            df, batch_size, output_schema, self._api_token, context, parallelism, data_load_trace_id
+            df,
+            batch_size,
+            output_schema,
+            self._api_token,
+            context,
+            parallelism,
+            data_load_trace_id,
+            self._uid2_config,
         )
 
         output_df.write.format("delta").mode("append").saveAsTable(output_table)
@@ -268,9 +281,10 @@ class TtdDatabricksClient:
         location: Optional[str] = None,
     ) -> str:
         """
-        Create output Delta table: TTD input columns + updated_at + status columns.
+        Create output Delta table: TTD input columns + updated_at + status columns + `uid2_resolutions`.
 
         Status columns added: success, error_code, error_message, processed_timestamp.
+        Resolution column added: `uid2_resolutions` (array<struct>).
         The table is created only if it does not already exist (idempotent).
 
         - endpoint: Required. Endpoint enum for schema determination.
@@ -374,7 +388,8 @@ class TtdDatabricksClient:
 
         Delegates item-building and the API call to the endpoint-specific handler module,
         then applies shared failed_lines parsing to produce per-row result dicts with keys:
-        success (bool), error_code (Optional[str]), error_message (Optional[str]).
+        success (bool), error_code (Optional[str]), error_message (Optional[str]),
+        and `uid2_resolutions` (list[dict], empty on transient/4xx errors).
 
         - rows: Spark Rows from df.collect(); must contain the mandatory columns for context.endpoint.
         - batch_index: Zero-based batch number used in TTDApiError if the call fails.
@@ -392,17 +407,34 @@ class TtdDatabricksClient:
         from ttd_data.errors import DataError, NoResponseError
 
         from ttd_databricks_python.ttd_databricks.exceptions import TTDApiError
-        from ttd_databricks_python.ttd_databricks.utils import parse_failed_lines
+        from ttd_databricks_python.ttd_databricks.utils import (
+            EMPTY_RESOLUTION_VALUE,
+            attach_resolutions,
+            parse_failed_lines,
+        )
 
         handler = importlib.import_module(context.endpoint.handler_module)
-        items = handler.build_items([row.asDict() for row in rows])
+        rows_data = [row.asDict() for row in rows]
+        items = handler.build_items(rows_data)
+        raw_pii_ids_per_row = handler.collect_raw_pii_ids_per_row(rows_data)
 
         def fail_all(error_code: str | None, error_message: str) -> list[dict[str, Any]]:
-            return [{"success": False, "error_code": error_code, "error_message": error_message} for _ in rows]
+            return [
+                {
+                    "success": False,
+                    "error_code": error_code,
+                    "error_message": error_message,
+                    **EMPTY_RESOLUTION_VALUE,
+                }
+                for _ in rows
+            ]
 
         failed_lines: list[Any] = []
+        identity_resolutions: dict[str, Any] = {}
         try:
-            failed_lines = handler.call_api(self._data_api_client, context, items, self._api_token, data_load_trace_id)
+            failed_lines, identity_resolutions = handler.call_api(
+                self._data_api_client, context, items, self._api_token, data_load_trace_id
+            )
         except (
             httpx.TimeoutException,
             httpx.RemoteProtocolError,
@@ -426,7 +458,8 @@ class TtdDatabricksClient:
                 batch_index=batch_index,
             ) from exc
 
-        return parse_failed_lines(failed_lines, len(rows))
+        results = parse_failed_lines(failed_lines, len(rows))
+        return attach_resolutions(results, raw_pii_ids_per_row, identity_resolutions)
 
     @staticmethod
     def _fill_nullable_columns(df: DataFrame, endpoint: TTDEndpoint) -> DataFrame:

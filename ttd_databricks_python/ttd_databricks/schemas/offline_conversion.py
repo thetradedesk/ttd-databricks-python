@@ -52,8 +52,13 @@ def input_schema() -> StructType:
                         Array of structs with fields:
                           type — identity type name.
                                  Must be one of: TDID, DAID, UID2, UID2Token,
-                                 EUID, EUIDToken, RampID.
-                                 Converted to integer code (0–6) in the request.
+                                 EUID, EUIDToken, RampID,
+                                 Email, Phone, HashedEmail, HashedPhone.
+                                 TDID..RampID are converted to type codes 0–6 in the
+                                 request. Email/Phone/HashedEmail/HashedPhone are
+                                 resolved to a UID2/EUID client-side by ttd-data sdk
+                                 and mapping is stored under `uid2_resolutions` column
+                                 of output table.
                           id   — identity value string.
                         UserIdArrayMetadataFormat is hardcoded to ["type", "id"].
                         Up to 20 IDs per row; multiple IDs of the same type are allowed.
