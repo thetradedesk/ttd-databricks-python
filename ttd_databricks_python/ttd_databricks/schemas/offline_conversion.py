@@ -55,10 +55,11 @@ def input_schema() -> StructType:
                                  EUID, EUIDToken, RampID,
                                  Email, Phone, HashedEmail, HashedPhone.
                                  TDID..RampID are converted to type codes 0–6 in the
-                                 request. Email/Phone/HashedEmail/HashedPhone are
-                                 resolved to a UID2/EUID client-side by ttd-data sdk
-                                 and mapping is stored under `uid2_resolutions` column
-                                 of output table.
+                                 request. Email/Phone/HashedEmail/HashedPhone require
+                                 `uid2_config` to be set on the `TtdDatabricksClient`.
+                                 They are resolved to a UID2/EUID client-side by the
+                                 ttd-data SDK, and the mapping is stored in the
+                                 `uid2_resolutions` column of the output table.
                           id   — identity value string.
                         UserIdArrayMetadataFormat is hardcoded to ["type", "id"].
                         Up to 20 IDs per row; multiple IDs of the same type are allowed.

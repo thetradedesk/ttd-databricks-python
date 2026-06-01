@@ -210,6 +210,7 @@ class TtdDatabricksClient:
             return
 
         output_schema = get_output_schema(df.schema)
+        self._validate_output_table_schema(spark, output_table, output_schema)
         output_df = process_partitions(
             df,
             batch_size,
@@ -408,8 +409,8 @@ class TtdDatabricksClient:
 
         from ttd_databricks_python.ttd_databricks.exceptions import TTDApiError
         from ttd_databricks_python.ttd_databricks.utils import (
-            EMPTY_RESOLUTION_VALUE,
             attach_resolutions,
+            empty_resolution_value,
             parse_failed_lines,
         )
 
@@ -424,7 +425,7 @@ class TtdDatabricksClient:
                     "success": False,
                     "error_code": error_code,
                     "error_message": error_message,
-                    **EMPTY_RESOLUTION_VALUE,
+                    **empty_resolution_value(),
                 }
                 for _ in rows
             ]
@@ -459,7 +460,30 @@ class TtdDatabricksClient:
             ) from exc
 
         results = parse_failed_lines(failed_lines, len(rows))
-        return attach_resolutions(results, raw_pii_ids_per_row, identity_resolutions)
+        attach_resolutions(results, raw_pii_ids_per_row, identity_resolutions)
+        return results
+
+    @staticmethod
+    def _validate_output_table_schema(spark: SparkSession, output_table: str, expected_schema: Any) -> None:
+        """Fail fast if `output_table` exists but is missing columns from `expected_schema`.
+
+        Surfaces an ALTER TABLE statement in the error so the user can migrate manually.
+        No-op if the table doesn't exist (it will be created on first write).
+        """
+        from ttd_databricks_python.ttd_databricks.exceptions import TTDConfigurationError
+
+        if not spark.catalog.tableExists(output_table):
+            return
+        existing_names = {f.name for f in spark.table(output_table).schema.fields}
+        missing_fields = [f for f in expected_schema.fields if f.name not in existing_names]
+        if not missing_fields:
+            return
+        alter_clauses = ", ".join(f"`{f.name}` {f.dataType.simpleString()}" for f in missing_fields)
+        missing_names = [f.name for f in missing_fields]
+        raise TTDConfigurationError(
+            f"Output table '{output_table}' is missing columns {missing_names}. "
+            f"To migrate, run:\n  ALTER TABLE {output_table} ADD COLUMNS ({alter_clauses});"
+        )
 
     @staticmethod
     def _fill_nullable_columns(df: DataFrame, endpoint: TTDEndpoint) -> DataFrame:

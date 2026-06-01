@@ -7,11 +7,12 @@ from typing import TYPE_CHECKING, Any, Optional
 from ttd_databricks_python.ttd_databricks.constants import TTD_DATABRICKS_SDK_ORIGIN_ID
 from ttd_databricks_python.ttd_databricks.contexts import AdvertiserContext
 from ttd_databricks_python.ttd_databricks.handlers._common import (
-    collect_item_level_raw_pii_ids as collect_raw_pii_ids_per_row,
-)
-from ttd_databricks_python.ttd_databricks.handlers._common import (
+    ServerResponseAttr,
     extract_failed_lines_from_error,
     extract_response_data,
+)
+from ttd_databricks_python.ttd_databricks.handlers._common import (
+    collect_item_level_raw_pii_ids as collect_raw_pii_ids_per_row,
 )
 from ttd_databricks_python.ttd_databricks.id_types import normalize_id_type
 
@@ -78,7 +79,7 @@ def call_api(
             data_origins=data_origins,
             server_url=context.base_url_override,
         )
-        return extract_response_data(response, "advertiser_data_server_response")
+        return extract_response_data(response, ServerResponseAttr.ADVERTISER_DATA)
     except AdvertiserDataServerResponseError as exc:
         failed_lines = extract_failed_lines_from_error(exc)
         if not failed_lines:

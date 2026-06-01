@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from enum import Enum
 from typing import TYPE_CHECKING, Any, cast
 
 from ttd_databricks_python.ttd_databricks.id_types import is_raw_pii_id_type
@@ -10,12 +11,25 @@ if TYPE_CHECKING:
     from ttd_data.uid2 import UID2Resolution
 
 
+class ServerResponseAttr(str, Enum):
+    """Names of per-endpoint response attributes on ttd-data response wrappers."""
+
+    ADVERTISER_DATA = "advertiser_data_server_response"
+    THIRD_PARTY_DATA = "third_party_data_server_response"
+    OFFLINE_CONVERSION_DATA = "offline_conversion_data_server_response"
+    ADVERTISER_DSR = "advertiser_dsr_response"
+    MERCHANT_DSR = "merchant_dsr_response"
+    THIRD_PARTY_DSR = "third_party_dsr_response"
+
+
 def collect_item_level_raw_pii_ids(items_data: list[dict[str, Any]]) -> list[list[str]]:
     """Per-row raw PII identifiers for item-level-id endpoints."""
     return [[d["id_value"]] if is_raw_pii_id_type(d["id_type"]) else [] for d in items_data]
 
 
-def extract_response_data(response: Any, server_response_attr: str) -> tuple[list[Any], dict[str, UID2Resolution]]:
+def extract_response_data(
+    response: Any, server_response_attr: ServerResponseAttr
+) -> tuple[list[Any], dict[str, UID2Resolution]]:
     """Pull `(failed_lines, identity_resolutions)` from a successful SDK response.
 
     Raises AttributeError on missing `server_response_attr` to surface handler typos.
@@ -24,7 +38,7 @@ def extract_response_data(response: Any, server_response_attr: str) -> tuple[lis
 
     identity_resolutions = getattr(response, "identity_resolutions", {}) or {}
     failed_lines: list[Any] = []
-    server_response = getattr(response, server_response_attr)
+    server_response = getattr(response, server_response_attr.value)
     if server_response is not None:
         fl = server_response.failed_lines
         if fl is not UNSET and fl is not None:

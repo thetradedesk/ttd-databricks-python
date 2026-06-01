@@ -6,9 +6,10 @@ from typing import Any, Optional
 
 from ttd_databricks_python.ttd_databricks.schemas import UID2_RESOLUTIONS_COLUMN
 
-# Empty `uid2_resolutions` value for failure paths. Read-only: callers spread into
-# new dicts (`**EMPTY_RESOLUTION_VALUE`), never mutate.
-EMPTY_RESOLUTION_VALUE: dict[str, list[Any]] = {UID2_RESOLUTIONS_COLUMN: []}
+
+def empty_resolution_value() -> dict[str, list[Any]]:
+    """Return a fresh empty `uid2_resolutions` value for failure paths."""
+    return {UID2_RESOLUTIONS_COLUMN: []}
 
 
 def parse_failed_lines(failed_lines: list[Any], row_count: int) -> list[dict[str, Any]]:
@@ -72,11 +73,11 @@ def attach_resolutions(
     results: list[dict[str, Any]],
     raw_pii_ids_per_row: list[list[str]],
     identity_resolutions: dict[str, Any],
-) -> list[dict[str, Any]]:
-    """Merge per-row UID2 resolutions into each result as `uid2_resolutions: array<struct>`.
+) -> None:
+    """Merge per-row UID2 resolutions into each result dict as `uid2_resolutions: array<struct>`.
 
     `raw_pii_ids_per_row[i]` is the list of raw PII identifiers for row i (empty if none).
-    Mutates and returns `results`.
+    Mutates `results` in place.
     """
     for result, raws in zip(results, raw_pii_ids_per_row, strict=True):
         entries: list[dict[str, Any]] = []
@@ -85,4 +86,3 @@ def attach_resolutions(
             if resolution is not None:
                 entries.append(_resolution_to_dict(resolution, submitted_id=raw))
         result[UID2_RESOLUTIONS_COLUMN] = entries
-    return results

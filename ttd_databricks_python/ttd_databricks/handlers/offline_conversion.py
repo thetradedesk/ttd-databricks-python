@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, Optional
 from ttd_databricks_python.ttd_databricks.constants import TTD_DATABRICKS_SDK_ORIGIN_ID
 from ttd_databricks_python.ttd_databricks.contexts import OfflineConversionContext
 from ttd_databricks_python.ttd_databricks.handlers._common import (
+    ServerResponseAttr,
     extract_failed_lines_from_error,
     extract_response_data,
 )
@@ -141,7 +142,7 @@ def call_api(
             data_origins=data_origins,
             server_url=context.base_url_override,
         )
-        return extract_response_data(response, "offline_conversion_data_server_response")
+        return extract_response_data(response, ServerResponseAttr.OFFLINE_CONVERSION_DATA)
     except OfflineConversionDataServerResponseError as exc:
         failed_lines = extract_failed_lines_from_error(exc)
         if not failed_lines:

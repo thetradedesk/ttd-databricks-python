@@ -150,7 +150,7 @@ class TestAttachResolutionsSingleId:
     def test_mapped_row_gets_singleton_array(self) -> None:
         results = [r.copy() for r in self._RESULTS_INPUT]
         ts = datetime(2024, 1, 1, tzinfo=timezone.utc)
-        out = attach_resolutions(
+        attach_resolutions(
             results,
             raw_pii_ids_per_row=[["a@example.com"], [], ["missing@example.com"]],
             identity_resolutions={
@@ -159,7 +159,7 @@ class TestAttachResolutionsSingleId:
             },
         )
         # Mapped row: array with one entry.
-        assert out[0][UID2_RESOLUTIONS_COLUMN] == [
+        assert results[0][UID2_RESOLUTIONS_COLUMN] == [
             {
                 "submitted_id": "a@example.com",
                 "current_uid2": "uid2-aaa",
@@ -169,23 +169,23 @@ class TestAttachResolutionsSingleId:
             }
         ]
         # Row 1 used a non-PII id_type — array is empty.
-        assert out[1][UID2_RESOLUTIONS_COLUMN] == []
+        assert results[1][UID2_RESOLUTIONS_COLUMN] == []
         # Row 2 was unmapped — array with one entry carrying the reason.
-        assert len(out[2][UID2_RESOLUTIONS_COLUMN]) == 1
-        assert out[2][UID2_RESOLUTIONS_COLUMN][0]["unmapped_reason"] == "optout"
-        assert out[2][UID2_RESOLUTIONS_COLUMN][0]["current_uid2"] is None
-        assert out[2][UID2_RESOLUTIONS_COLUMN][0]["submitted_id"] == "missing@example.com"
+        assert len(results[2][UID2_RESOLUTIONS_COLUMN]) == 1
+        assert results[2][UID2_RESOLUTIONS_COLUMN][0]["unmapped_reason"] == "optout"
+        assert results[2][UID2_RESOLUTIONS_COLUMN][0]["current_uid2"] is None
+        assert results[2][UID2_RESOLUTIONS_COLUMN][0]["submitted_id"] == "missing@example.com"
 
     def test_raw_id_with_no_resolution_entry_yields_empty_array(self) -> None:
         # If the SDK didn't return a resolution for the submitted raw id (e.g. uid2_config
         # not configured), the array is empty even though the row used a raw PII id_type.
         results = [{"success": True, "error_code": None, "error_message": None}]
-        out = attach_resolutions(
+        attach_resolutions(
             results,
             raw_pii_ids_per_row=[["a@example.com"]],
             identity_resolutions={},
         )
-        assert out[0][UID2_RESOLUTIONS_COLUMN] == []
+        assert results[0][UID2_RESOLUTIONS_COLUMN] == []
 
 
 class TestAttachResolutionsOfflineConversion:
@@ -194,7 +194,7 @@ class TestAttachResolutionsOfflineConversion:
             {"success": True, "error_code": None, "error_message": None},
             {"success": True, "error_code": None, "error_message": None},
         ]
-        out = attach_resolutions(
+        attach_resolutions(
             results,
             raw_pii_ids_per_row=[["a@example.com", "hashedphone-1"], []],
             identity_resolutions={
@@ -202,14 +202,14 @@ class TestAttachResolutionsOfflineConversion:
                 "hashedphone-1": _unmapped_resolution("invalid"),
             },
         )
-        first = out[0][UID2_RESOLUTIONS_COLUMN]
+        first = results[0][UID2_RESOLUTIONS_COLUMN]
         assert len(first) == 2
         assert first[0]["current_uid2"] == "uid2-aaa"
         assert first[0]["submitted_id"] == "a@example.com"
         assert first[1]["unmapped_reason"] == "invalid"
         assert first[1]["submitted_id"] == "hashedphone-1"
         # Row with no raw ids gets an empty list.
-        assert out[1][UID2_RESOLUTIONS_COLUMN] == []
+        assert results[1][UID2_RESOLUTIONS_COLUMN] == []
 
 
 # --------------------------------------------------------------------------- #
@@ -230,6 +230,74 @@ class TestOutputSchemaUniformArrayShape:
         assert isinstance(field.dataType.elementType, StructType)
         inner_names = {f.name for f in field.dataType.elementType.fields}
         assert inner_names == {"submitted_id", "current_uid2", "previous_uid2", "refresh_from", "unmapped_reason"}
+
+
+# --------------------------------------------------------------------------- #
+# _validate_output_table_schema pre-flight check                                #
+# --------------------------------------------------------------------------- #
+
+
+class TestValidateOutputTableSchema:
+    def _expected_schema(self):
+        from pyspark.sql.types import (
+            ArrayType,
+            BooleanType,
+            StringType,
+            StructField,
+            StructType,
+            TimestampType,
+        )
+
+        return StructType(
+            [
+                StructField("id_value", StringType(), False),
+                StructField("success", BooleanType(), True),
+                StructField("processed_timestamp", TimestampType(), True),
+                StructField(
+                    UID2_RESOLUTIONS_COLUMN,
+                    ArrayType(StructType([StructField("submitted_id", StringType(), True)]), True),
+                    True,
+                ),
+            ]
+        )
+
+    def test_passes_when_table_does_not_exist(self) -> None:
+        spark = MagicMock()
+        spark.catalog.tableExists.return_value = False
+        # No exception, no schema read.
+        TtdDatabricksClient._validate_output_table_schema(spark, "missing_table", self._expected_schema())
+        spark.table.assert_not_called()
+
+    def test_passes_when_table_has_all_expected_columns(self) -> None:
+        spark = MagicMock()
+        spark.catalog.tableExists.return_value = True
+        spark.table.return_value.schema = self._expected_schema()
+        TtdDatabricksClient._validate_output_table_schema(spark, "ok_table", self._expected_schema())
+
+    def test_raises_with_alter_table_hint_when_column_missing(self) -> None:
+        from pyspark.sql.types import BooleanType, StringType, StructField, StructType, TimestampType
+
+        from ttd_databricks_python.ttd_databricks.exceptions import TTDConfigurationError
+
+        # Existing table is missing `uid2_resolutions`.
+        existing = StructType(
+            [
+                StructField("id_value", StringType(), False),
+                StructField("success", BooleanType(), True),
+                StructField("processed_timestamp", TimestampType(), True),
+            ]
+        )
+        spark = MagicMock()
+        spark.catalog.tableExists.return_value = True
+        spark.table.return_value.schema = existing
+
+        with pytest.raises(TTDConfigurationError) as exc_info:
+            TtdDatabricksClient._validate_output_table_schema(spark, "stale_table", self._expected_schema())
+
+        message = str(exc_info.value)
+        assert UID2_RESOLUTIONS_COLUMN in message
+        assert "ALTER TABLE stale_table ADD COLUMNS" in message
+        assert "array<struct<submitted_id:string>>" in message
 
 
 # --------------------------------------------------------------------------- #

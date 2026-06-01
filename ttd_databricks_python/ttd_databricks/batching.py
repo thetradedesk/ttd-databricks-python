@@ -66,8 +66,8 @@ def process_partitions(
         from ttd_data.errors import DataError, NoResponseError
 
         from ttd_databricks_python.ttd_databricks.utils import (
-            EMPTY_RESOLUTION_VALUE,
             attach_resolutions,
+            empty_resolution_value,
             parse_failed_lines,
         )
 
@@ -95,7 +95,7 @@ def process_partitions(
                         "error_code": error_code,
                         "error_message": error_message,
                         "processed_timestamp": timestamp,
-                        **EMPTY_RESOLUTION_VALUE,
+                        **empty_resolution_value(),
                     }
                     yield tuple(result[f] for f in output_field_names)
 
@@ -127,7 +127,7 @@ def process_partitions(
                 raise RuntimeError(f"Unexpected error during API call: {exc}") from exc
 
             row_results = parse_failed_lines(failed_lines, len(batch_rows))
-            row_results = attach_resolutions(row_results, raw_pii_ids_per_row, identity_resolutions)
+            attach_resolutions(row_results, raw_pii_ids_per_row, identity_resolutions)
             for row_dict, row_result in zip(batch_rows, row_results, strict=True):
                 result = {**row_dict, **row_result, "processed_timestamp": timestamp}
                 yield tuple(result[f] for f in output_field_names)
