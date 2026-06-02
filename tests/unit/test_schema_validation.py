@@ -100,11 +100,11 @@ def test_validation_error_includes_endpoint_name_for_debuggability():
 # --------------------------------------------------------------------------- #
 
 
-_STATUS_COLS = ["success", "error_code", "error_message", "processed_timestamp"]
+_EXTRA_OUTPUT_COLS = ["success", "error_code", "error_message", "processed_timestamp", "uid2_resolutions"]
 
 
 def test_output_validation_passes_with_input_and_status_columns():
-    df = _MockDataFrame(["id_type", "id_value", "segment_name"] + _STATUS_COLS)
+    df = _MockDataFrame(["id_type", "id_value", "segment_name"] + _EXTRA_OUTPUT_COLS)
     validate_ttd_schema(df, TTDEndpoint.ADVERTISER, SchemaType.OUTPUT)
 
 
@@ -113,5 +113,5 @@ def test_output_validation_raises_when_status_columns_missing():
     df = _MockDataFrame(["id_type", "id_value", "segment_name"])
     with pytest.raises(TTDSchemaValidationError) as exc_info:
         validate_ttd_schema(df, TTDEndpoint.ADVERTISER, SchemaType.OUTPUT)
-    for col in _STATUS_COLS:
+    for col in _EXTRA_OUTPUT_COLS:
         assert col in exc_info.value.missing_columns

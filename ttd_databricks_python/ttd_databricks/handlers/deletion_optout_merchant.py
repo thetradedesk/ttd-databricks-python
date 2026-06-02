@@ -2,14 +2,25 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Optional, cast
+from typing import TYPE_CHECKING, Any, Optional
 
 from ttd_databricks_python.ttd_databricks.contexts import DeletionOptOutMerchantContext
+from ttd_databricks_python.ttd_databricks.handlers._common import (
+    ServerResponseAttr,
+    extract_failed_lines_from_error,
+    extract_response_data,
+)
+from ttd_databricks_python.ttd_databricks.handlers._common import (
+    collect_item_level_raw_pii_ids as collect_raw_pii_ids_per_row,
+)
 from ttd_databricks_python.ttd_databricks.id_types import normalize_id_type
 
 if TYPE_CHECKING:
     from ttd_data import DataClient
     from ttd_data.models import PartnerDsrDataItem
+    from ttd_data.uid2 import UID2Resolution
+
+__all__ = ["build_items", "call_api", "collect_raw_pii_ids_per_row"]
 
 
 def build_items(items_data: list[dict[str, Any]]) -> list[PartnerDsrDataItem]:
@@ -28,17 +39,14 @@ def call_api(
     items: list[PartnerDsrDataItem],
     api_token: str,
     data_load_trace_id: Optional[str] = None,
-) -> list[Any]:
-    """Call data_subject_request_merchant_data. Returns failed_lines (may be empty).
+) -> tuple[list[Any], dict[str, UID2Resolution]]:
+    """Call data_subject_request_merchant_data.
 
-    Raises MerchantDsrResponseError on 400 responses without failed_lines.
-    Raises APIError / NoResponseError on unrecoverable errors — caller is
-    responsible for converting these to the appropriate exception type.
+    Returns `(failed_lines, identity_resolutions)`.
     """
     from ttd_data.errors import MerchantDsrResponseError
     from ttd_data.types import UNSET
 
-    failed_lines: list[Any] = []
     try:
         response = client.deletion_opt_out.data_subject_request_merchant_data(
             ttd_auth=api_token,
@@ -48,14 +56,9 @@ def call_api(
             request_type=context.request_type,
             server_url=context.base_url_override,
         )
-        server_response = response.merchant_dsr_response
-        if server_response is not None:
-            fl = server_response.failed_lines
-            if fl is not UNSET and fl is not None:
-                failed_lines = cast(list[Any], fl)
+        return extract_response_data(response, ServerResponseAttr.MERCHANT_DSR)
     except MerchantDsrResponseError as exc:
-        fl = exc.data.failed_lines
-        if fl is UNSET or fl is None or not fl:
+        failed_lines = extract_failed_lines_from_error(exc)
+        if not failed_lines:
             raise
-        failed_lines = cast(list[Any], fl)
-    return failed_lines
+        return failed_lines, {}

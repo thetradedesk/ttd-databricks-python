@@ -18,7 +18,22 @@ _NORMALIZATION: dict[str, str] = {
     "FIRSTID": "first_id",
     "MERKURYID": "merkury_id",
     "IQVIAPPID": "iqvia_ppid",
+    "EMAIL": "email",
+    "PHONE": "phone",
+    "HASHEDEMAIL": "hashed_email",
+    "HASHEDPHONE": "hashed_phone",
 }
+
+# id_type values that are raw PII identifiers resolved client-side to a UID2/EUID
+# by the upstream SDK when a UID2Config is configured on DataClient. Rows using
+# these identifiers populate a per-row resolution in the output table.
+RAW_PII_ID_TYPES: frozenset[str] = frozenset({"EMAIL", "PHONE", "HASHEDEMAIL", "HASHEDPHONE"})
+
+
+def is_raw_pii_id_type(id_type: str) -> bool:
+    """Return True if id_type is a raw PII identifier (Email/Phone/Hashed*)."""
+    return id_type.upper() in RAW_PII_ID_TYPES
+
 
 VALID_ID_TYPES: frozenset[str] = frozenset(_NORMALIZATION)
 

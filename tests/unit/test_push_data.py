@@ -40,7 +40,8 @@ def _make_client(spark: SparkSession) -> TtdDatabricksClient:
 def _make_handler(failed_lines: list | None = None) -> MagicMock:
     mock_handler = MagicMock()
     mock_handler.build_items.side_effect = lambda rows: [MagicMock() for _ in rows]
-    mock_handler.call_api.return_value = failed_lines or []
+    mock_handler.collect_raw_pii_ids_per_row.side_effect = lambda rows: [[] for _ in rows]
+    mock_handler.call_api.return_value = (failed_lines or [], {})
     return mock_handler
 
 

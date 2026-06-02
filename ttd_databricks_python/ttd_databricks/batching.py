@@ -11,13 +11,16 @@ in each worker process rather than serialized from the driver.
 from __future__ import annotations
 
 from collections.abc import Iterator
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from pyspark.sql import DataFrame
 from pyspark.sql.types import StructType
 from ttd_data import DataClient
 
 from ttd_databricks_python.ttd_databricks.contexts import TTDContext
+
+if TYPE_CHECKING:
+    from ttd_data.uid2 import UID2Config
 
 # Per-worker-process DataClient singleton. Each executor runs mapPartitions tasks in a
 # dedicated Python worker process, so there are no race conditions. Reusing the
@@ -33,6 +36,7 @@ def process_partitions(
     context: TTDContext,
     parallelism: Optional[int] = None,
     data_load_trace_id: Optional[str] = None,
+    uid2_config: Optional[UID2Config] = None,
 ) -> DataFrame:
     """Process all rows through the API using a single mapPartitions pass.
 
@@ -61,17 +65,24 @@ def process_partitions(
         from ttd_data import DataClient
         from ttd_data.errors import DataError, NoResponseError
 
-        from ttd_databricks_python.ttd_databricks.utils import parse_failed_lines
+        from ttd_databricks_python.ttd_databricks.utils import (
+            attach_resolutions,
+            empty_resolution_value,
+            parse_failed_lines,
+        )
 
         global _worker_client
         if _worker_client is None:
-            _worker_client = DataClient(timeout_ms=10_000)
+            # uid2_config (a plain @dataclass) is closure-captured and cloudpickled to workers;
+            # DataClient itself can't be — it holds open httpx connections.
+            _worker_client = DataClient(timeout_ms=10_000, uid2_config=uid2_config)
         client = _worker_client
         handler = importlib.import_module(handler_module)
 
         def call_batch(batch_rows: list[dict[str, Any]]) -> Iterator[tuple[Any, ...]]:
             timestamp = datetime.now(timezone.utc)
             items = handler.build_items(batch_rows)
+            raw_pii_ids_per_row = handler.collect_raw_pii_ids_per_row(batch_rows)
 
             def fail_batch(
                 error_code: str | None,
@@ -84,12 +95,16 @@ def process_partitions(
                         "error_code": error_code,
                         "error_message": error_message,
                         "processed_timestamp": timestamp,
+                        **empty_resolution_value(),
                     }
                     yield tuple(result[f] for f in output_field_names)
 
             failed_lines: list[Any] = []
+            identity_resolutions: dict[str, Any] = {}
             try:
-                failed_lines = handler.call_api(client, context, items, api_token, data_load_trace_id)
+                failed_lines, identity_resolutions = handler.call_api(
+                    client, context, items, api_token, data_load_trace_id
+                )
             except (
                 httpx.TimeoutException,
                 httpx.RemoteProtocolError,
@@ -112,6 +127,7 @@ def process_partitions(
                 raise RuntimeError(f"Unexpected error during API call: {exc}") from exc
 
             row_results = parse_failed_lines(failed_lines, len(batch_rows))
+            attach_resolutions(row_results, raw_pii_ids_per_row, identity_resolutions)
             for row_dict, row_result in zip(batch_rows, row_results, strict=True):
                 result = {**row_dict, **row_result, "processed_timestamp": timestamp}
                 yield tuple(result[f] for f in output_field_names)

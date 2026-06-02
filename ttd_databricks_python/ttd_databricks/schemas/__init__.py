@@ -6,11 +6,20 @@ import importlib
 from enum import Enum
 from typing import TYPE_CHECKING
 
+from pyspark.sql.types import (
+    ArrayType,
+    BooleanType,
+    DataType,
+    StringType,
+    StructField,
+    StructType,
+    TimestampType,
+)
+
 from ttd_databricks_python.ttd_databricks.endpoints import TTDEndpoint
 
 if TYPE_CHECKING:
     from pyspark.sql import DataFrame
-    from pyspark.sql.types import StructType
 
 
 class SchemaType(Enum):
@@ -18,11 +27,33 @@ class SchemaType(Enum):
     OUTPUT = "output"
 
 
-_STATUS_COLUMNS: list[tuple[str, str]] = [
-    ("success", "boolean"),
-    ("error_code", "string"),
-    ("error_message", "string"),
-    ("processed_timestamp", "timestamp"),
+# Uniform column shape across all endpoints. See `attach_resolutions` in utils.py
+# for the per-endpoint array semantics.
+UID2_RESOLUTIONS_COLUMN = "uid2_resolutions"
+
+
+# Columns appended to every endpoint's output schema after the input fields.
+# Order is load-bearing: existing output Delta tables expect this exact column order.
+_EXTRA_OUTPUT_COLS: list[tuple[str, DataType]] = [
+    ("success", BooleanType()),
+    ("error_code", StringType()),
+    ("error_message", StringType()),
+    ("processed_timestamp", TimestampType()),
+    (
+        UID2_RESOLUTIONS_COLUMN,
+        ArrayType(
+            StructType(
+                [
+                    StructField("submitted_id", StringType(), True),
+                    StructField("current_uid2", StringType(), True),
+                    StructField("previous_uid2", StringType(), True),
+                    StructField("refresh_from", TimestampType(), True),
+                    StructField("unmapped_reason", StringType(), True),
+                ]
+            ),
+            True,
+        ),
+    ),
 ]
 
 
@@ -67,7 +98,7 @@ def validate_ttd_schema(
     - schema_type:
         INPUT  — validates mandatory TTD columns only.
         OUTPUT — validates mandatory TTD columns + status columns
-                 (success, error_code, error_message, processed_timestamp).
+                 (success, error_code, error_message, processed_timestamp, uid2_resolutions).
 
     Raises TTDSchemaValidationError if any required columns are missing.
     Extra columns in the DataFrame are ignored.
@@ -76,7 +107,7 @@ def validate_ttd_schema(
 
     required_columns = get_required_column_names(endpoint)
     if schema_type == SchemaType.OUTPUT:
-        required_columns = required_columns + [name for name, _ in _STATUS_COLUMNS]
+        required_columns = required_columns + [name for name, _ in _EXTRA_OUTPUT_COLS]
 
     provided_columns = set(df.schema.fieldNames())
     missing = [col_name for col_name in required_columns if col_name not in provided_columns]
@@ -91,7 +122,7 @@ def validate_ttd_schema(
 
 def get_output_schema(input_schema: StructType) -> StructType:
     """
-    Builds the output schema: input schema fields + status columns.
+    Builds the output schema: input schema fields + status columns + `uid2_resolutions`.
 
     Args:
         input_schema: pyspark.sql.types.StructType — typically the input table schema.
@@ -99,17 +130,10 @@ def get_output_schema(input_schema: StructType) -> StructType:
     Returns:
         pyspark.sql.types.StructType with all input fields plus:
         success (boolean), error_code (string), error_message (string),
-        processed_timestamp (timestamp).
+        processed_timestamp (timestamp), uid2_resolutions (array<struct>).
     """
-    from pyspark.sql.types import BooleanType, StringType, StructField, StructType, TimestampType
-
-    type_map = {
-        "boolean": BooleanType(),
-        "string": StringType(),
-        "timestamp": TimestampType(),
-    }
-    status_fields = [StructField(name, type_map[dtype], True) for name, dtype in _STATUS_COLUMNS]
-    return StructType(input_schema.fields + status_fields)
+    extra_fields = [StructField(name, dtype, True) for name, dtype in _EXTRA_OUTPUT_COLS]
+    return StructType(input_schema.fields + extra_fields)
 
 
 def get_metadata_schema() -> StructType:
@@ -119,7 +143,7 @@ def get_metadata_schema() -> StructType:
     Columns: last_processed_date (timestamp), run_timestamp (timestamp),
              records_processed (long).
     """
-    from pyspark.sql.types import LongType, StructField, StructType, TimestampType
+    from pyspark.sql.types import LongType
 
     return StructType(
         [

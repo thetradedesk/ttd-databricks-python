@@ -4,6 +4,13 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
+from ttd_databricks_python.ttd_databricks.schemas import UID2_RESOLUTIONS_COLUMN
+
+
+def empty_resolution_value() -> dict[str, list[Any]]:
+    """Return a fresh empty `uid2_resolutions` value for failure paths."""
+    return {UID2_RESOLUTIONS_COLUMN: []}
+
 
 def parse_failed_lines(failed_lines: list[Any], row_count: int) -> list[dict[str, Any]]:
     """Map API failed_lines to per-row result dicts with success, error_code, error_message.
@@ -50,3 +57,32 @@ def parse_failed_lines(failed_lines: list[Any], row_count: int) -> list[dict[str
             results.append({"success": True, "error_code": None, "error_message": None})
 
     return results
+
+
+def _resolution_to_dict(resolution: Any, submitted_id: Optional[str]) -> dict[str, Any]:
+    return {
+        "submitted_id": submitted_id,
+        "current_uid2": resolution.current_raw_uid,
+        "previous_uid2": resolution.previous_raw_uid,
+        "refresh_from": resolution.refresh_from,
+        "unmapped_reason": resolution.unmapped_reason,
+    }
+
+
+def attach_resolutions(
+    results: list[dict[str, Any]],
+    raw_pii_ids_per_row: list[list[str]],
+    identity_resolutions: dict[str, Any],
+) -> None:
+    """Merge per-row UID2 resolutions into each result dict as `uid2_resolutions: array<struct>`.
+
+    `raw_pii_ids_per_row[i]` is the list of raw PII identifiers for row i (empty if none).
+    Mutates `results` in place.
+    """
+    for result, raws in zip(results, raw_pii_ids_per_row, strict=True):
+        entries: list[dict[str, Any]] = []
+        for raw in raws:
+            resolution = identity_resolutions.get(raw)
+            if resolution is not None:
+                entries.append(_resolution_to_dict(resolution, submitted_id=raw))
+        result[UID2_RESOLUTIONS_COLUMN] = entries

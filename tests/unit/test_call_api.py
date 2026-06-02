@@ -42,6 +42,12 @@ def _make_rows(*dicts: dict[str, Any]) -> list[MagicMock]:
     return rows
 
 
+def _make_mock_handler() -> MagicMock:
+    mock_handler = MagicMock()
+    mock_handler.collect_raw_pii_ids_per_row.side_effect = lambda rows_data: [[] for _ in rows_data]
+    return mock_handler
+
+
 def _make_failed_line(item_number: int, error_code: str = "INVALID", message: str | None = None) -> MagicMock:
     line = MagicMock()
     line.item_number = str(item_number)
@@ -62,9 +68,9 @@ _ROW = {"id_type": "TDID", "id_value": "abc", "segment_name": "seg"}
 def test_all_rows_succeed_when_no_failed_lines():
     client = _make_client()
     rows = _make_rows(_ROW, _ROW, _ROW)
-    mock_handler = MagicMock()
+    mock_handler = _make_mock_handler()
     mock_handler.build_items.return_value = [MagicMock()] * 3
-    mock_handler.call_api.return_value = []
+    mock_handler.call_api.return_value = ([], {})
 
     with patch("importlib.import_module", return_value=mock_handler):
         results = client._call_api(_CONTEXT, rows, batch_index=0)
@@ -81,9 +87,12 @@ def test_all_rows_succeed_when_no_failed_lines():
 def test_failed_row_is_marked_with_success_false_and_error_details():
     client = _make_client()
     rows = _make_rows(_ROW, _ROW)
-    mock_handler = MagicMock()
+    mock_handler = _make_mock_handler()
     mock_handler.build_items.return_value = [MagicMock(), MagicMock()]
-    mock_handler.call_api.return_value = [_make_failed_line(1, error_code="INVALID_ID", message="Bad id for item #1")]
+    mock_handler.call_api.return_value = (
+        [_make_failed_line(1, error_code="INVALID_ID", message="Bad id for item #1")],
+        {},
+    )
 
     with patch("importlib.import_module", return_value=mock_handler):
         results = client._call_api(_CONTEXT, rows, batch_index=0)
@@ -103,9 +112,9 @@ def test_only_unattributable_error_applies_fallback_to_all_rows():
     failed.item_number = None
     failed.message = "General error, no item number"
     failed.error_code.value = "UNKNOWN"
-    mock_handler = MagicMock()
+    mock_handler = _make_mock_handler()
     mock_handler.build_items.return_value = [MagicMock(), MagicMock()]
-    mock_handler.call_api.return_value = [failed]
+    mock_handler.call_api.return_value = ([failed], {})
 
     with patch("importlib.import_module", return_value=mock_handler):
         results = client._call_api(_CONTEXT, rows, batch_index=0)
@@ -120,16 +129,19 @@ def test_attributable_row_gets_specific_error_others_get_unattributable_fallback
     # to the unattributable error. Both rows still fail, but with different details.
     client = _make_client()
     rows = _make_rows(_ROW, _ROW)
-    mock_handler = MagicMock()
+    mock_handler = _make_mock_handler()
     mock_handler.build_items.return_value = [MagicMock(), MagicMock()]
     unattributable = MagicMock()
     unattributable.item_number = None
     unattributable.message = "General error, no item number"
     unattributable.error_code.value = "UNKNOWN"
-    mock_handler.call_api.return_value = [
-        _make_failed_line(1, error_code="INVALID_ID", message="Bad id for item #1"),
-        unattributable,
-    ]
+    mock_handler.call_api.return_value = (
+        [
+            _make_failed_line(1, error_code="INVALID_ID", message="Bad id for item #1"),
+            unattributable,
+        ],
+        {},
+    )
 
     with patch("importlib.import_module", return_value=mock_handler):
         results = client._call_api(_CONTEXT, rows, batch_index=0)
@@ -149,9 +161,9 @@ def test_failed_line_with_null_message_and_code_fails_all_rows():
     null_failed.item_number = None
     null_failed.message = None
     null_failed.error_code.value = None
-    mock_handler = MagicMock()
+    mock_handler = _make_mock_handler()
     mock_handler.build_items.return_value = [MagicMock(), MagicMock()]
-    mock_handler.call_api.return_value = [null_failed]
+    mock_handler.call_api.return_value = ([null_failed], {})
 
     with patch("importlib.import_module", return_value=mock_handler):
         results = client._call_api(_CONTEXT, rows, batch_index=0)
@@ -168,7 +180,7 @@ def test_failed_line_with_null_message_and_code_fails_all_rows():
 
 def test_no_response_error_from_handler_returns_failed_results():
     client = _make_client()
-    mock_handler = MagicMock()
+    mock_handler = _make_mock_handler()
     mock_handler.build_items.return_value = [MagicMock()]
 
     class _FakeNoResponseError(NoResponseError):
@@ -190,7 +202,7 @@ def test_no_response_error_from_handler_returns_failed_results():
 def test_4xx_error_raises_ttd_api_error():
     client = _make_client()
     rows = _make_rows(_ROW, _ROW)
-    mock_handler = MagicMock()
+    mock_handler = _make_mock_handler()
     mock_handler.build_items.return_value = [MagicMock(), MagicMock()]
 
     raw = MagicMock(spec=httpx.Response)
@@ -211,7 +223,7 @@ def test_4xx_error_raises_ttd_api_error():
 
 def test_unexpected_exception_from_handler_raises_ttd_api_error_with_message():
     client = _make_client()
-    mock_handler = MagicMock()
+    mock_handler = _make_mock_handler()
     mock_handler.build_items.return_value = [MagicMock()]
     mock_handler.call_api.side_effect = ValueError("unexpected error")
 

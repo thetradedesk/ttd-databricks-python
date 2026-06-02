@@ -2,15 +2,26 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Optional, cast
+from typing import TYPE_CHECKING, Any, Optional
 
 from ttd_databricks_python.ttd_databricks.constants import TTD_DATABRICKS_SDK_ORIGIN_ID
 from ttd_databricks_python.ttd_databricks.contexts import ThirdPartyContext
+from ttd_databricks_python.ttd_databricks.handlers._common import (
+    ServerResponseAttr,
+    extract_failed_lines_from_error,
+    extract_response_data,
+)
+from ttd_databricks_python.ttd_databricks.handlers._common import (
+    collect_item_level_raw_pii_ids as collect_raw_pii_ids_per_row,
+)
 from ttd_databricks_python.ttd_databricks.id_types import normalize_id_type
 
 if TYPE_CHECKING:
     from ttd_data import DataClient
     from ttd_data.models import ThirdPartyDataItem
+    from ttd_data.uid2 import UID2Resolution
+
+__all__ = ["build_items", "call_api", "collect_raw_pii_ids_per_row"]
 
 
 def build_items(items_data: list[dict[str, Any]]) -> list[ThirdPartyDataItem]:
@@ -44,8 +55,8 @@ def call_api(
     items: list[ThirdPartyDataItem],
     api_token: str,
     data_load_trace_id: Optional[str] = None,
-) -> list[Any]:
-    """Call ingest_third_party_data. Returns failed_lines (may be empty).
+) -> tuple[list[Any], dict[str, UID2Resolution]]:
+    """Call ingest_third_party_data. Returns (failed_lines, identity_resolutions).
 
     Raises ThirdPartyDataServerResponseError on 400 responses without failed_lines.
     Raises APIError / NoResponseError on unrecoverable errors — caller is
@@ -58,7 +69,6 @@ def call_api(
     sdk_origin = DataOrigin(id=TTD_DATABRICKS_SDK_ORIGIN_ID, type=DataOriginType.INTEGRATION)
     data_origins = (context.data_origins or []) + [sdk_origin]
 
-    failed_lines: list[Any] = []
     try:
         response = client.third_party.ingest_third_party_data(
             ttd_auth=api_token,
@@ -69,14 +79,9 @@ def call_api(
             data_origins=data_origins,
             server_url=context.base_url_override,
         )
-        server_response = response.third_party_data_server_response
-        if server_response is not None:
-            fl = server_response.failed_lines
-            if fl is not UNSET and fl is not None:
-                failed_lines = cast(list[Any], fl)
+        return extract_response_data(response, ServerResponseAttr.THIRD_PARTY_DATA)
     except ThirdPartyDataServerResponseError as exc:
-        fl = exc.data.failed_lines
-        if fl is UNSET or fl is None or not fl:
+        failed_lines = extract_failed_lines_from_error(exc)
+        if not failed_lines:
             raise
-        failed_lines = cast(list[Any], fl)
-    return failed_lines
+        return failed_lines, {}
