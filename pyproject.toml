@@ -17,7 +17,7 @@ authors = [
 ]
 
 dependencies = [
-    "ttd-data>=0.2.0,<0.3.0",
+    "ttd-data>=0.2.2,<0.3.0",
 ]
 
 [project.optional-dependencies]
@@ -37,12 +37,6 @@ include = ["ttd_databricks_python*"]
 python_version = "3.10"
 strict = true
 ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-# ttd_data re-exports DataClient/UserIdType/etc. from submodules without `__all__`,
-# which mypy's strict mode flags as not explicitly exported. Treat them as exported.
-module = "ttd_data.*"
-implicit_reexport = true
 
 [tool.ruff]
 target-version = "py310"

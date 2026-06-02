@@ -36,9 +36,10 @@ def input_schema() -> StructType:
                      Email, Phone, HashedEmail, HashedPhone.
                      Email/Phone/HashedEmail/HashedPhone require `uid2_config`
                      to be set on the `TtdDatabricksClient`. They are resolved
-                     to a UID2/EUID client-side by the ttd-data SDK, and the
-                     mapping is stored in the `uid2_resolutions` column of the
-                     output table.
+                     to a UID2/EUID by the UID2/EUID operator set in `uid2_config`.
+                     The raw PII identifier does not get sent to the TTD Data API.
+                     The raw PII identifier to UID2/EUID mapping is stored in the
+                     `uid2_resolutions` column of the output table.
       id_value     → the identifier value for the given id_type.
       segment_name → ThirdPartyData.name (audience segment / data element name).
 
