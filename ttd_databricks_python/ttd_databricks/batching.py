@@ -14,6 +14,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Iterator
 from typing import TYPE_CHECKING, Any, Optional, cast
 
+from pyspark.errors import PySparkException
 from pyspark.sql import DataFrame
 from pyspark.sql.types import StructType
 from ttd_data import DataClient
@@ -59,7 +60,7 @@ def process_partitions(
     if parallelism is None:
         try:
             parallelism = 2 * df.sparkSession.sparkContext.defaultParallelism
-        except Exception:
+        except (PySparkException, NotImplementedError):
             parallelism = _DEFAULT_PARALLELISM
 
     all_input_cols = [c for c in df.columns if not c.startswith("_")]

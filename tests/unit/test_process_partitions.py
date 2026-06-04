@@ -97,8 +97,8 @@ def test_mapinpandas_wires_up_and_round_trips(spark: SparkSession, failing_serve
     )
     result_rows = result_df.collect()
 
-    # 1. Our partition function actually executed in a Spark worker.
-    assert _FailingHandler.request_count >= 1, "mapInPandas did not invoke our partition function"
+    # 1. Our partition function executed in a Spark worker as expected: 7 rows / batch_size=3 → 3 batches.
+    assert _FailingHandler.request_count == 3
     # 2. Row count round-trips through the Arrow pipeline.
     assert len(result_rows) == 7
     # 3. Declared output schema columns are present (loose check — avoid nullable/metadata flakes).
