@@ -4,6 +4,10 @@ These are pure Python data-transformation tests — no Spark, no real API calls.
 """
 
 from datetime import datetime, timezone
+from typing import Union
+
+import numpy as np
+import pytest
 
 import ttd_databricks_python.ttd_databricks.handlers.advertiser as adv_handler
 from ttd_databricks_python.ttd_databricks.id_types import normalize_id_type
@@ -18,6 +22,13 @@ from ttd_data.types import UNSET
 # UNSET is not a singleton — the SDK creates fresh Unset() instances per field.
 # Use isinstance check rather than identity (is).
 _UnsetType = type(UNSET)
+
+
+# An array<struct> column reaches build_items as a list via the adhoc path
+# (collect + asDict) and as a numpy array via the batch path (mapInPandas).
+# build_items must handle both, so array-column tests run against each shape.
+def _build_array_column(array_type: type, items: list[dict]) -> Union[list, np.ndarray]:
+    return items if array_type is list else np.array(items, dtype=object)
 
 
 # --------------------------------------------------------------------------- #
@@ -119,10 +130,13 @@ class TestOfflineConversionBuildItems:
         assert isinstance(item.timestamp_utc, datetime)
         assert isinstance(item.user_id_array, _UnsetType)
 
-    def test_user_ids_converted_to_user_id_array_with_type_codes(self):
+    @pytest.mark.parametrize("array_type", [list, np.ndarray])
+    def test_user_ids_converted_to_user_id_array_with_type_codes(self, array_type):
         row = {
             **self._MINIMAL,
-            "user_ids": [{"type": "TDID", "id": "test-tdid-value"}, {"type": "DAID", "id": "test-daid-value"}],
+            "user_ids": _build_array_column(
+                array_type, [{"type": "TDID", "id": "test-tdid-value"}, {"type": "DAID", "id": "test-daid-value"}]
+            ),
         }
         item = oc_handler.build_items([row])[0]
         assert item.user_id_array == [["0", "test-tdid-value"], ["1", "test-daid-value"]]
@@ -148,3 +162,51 @@ class TestOfflineConversionBuildItems:
         assert item.order_id == "test-order-id"
         assert item.value == "99.99"
         assert item.country == "US"
+
+    @pytest.mark.parametrize("array_type", [list, np.ndarray])
+    def test_multi_element_line_items(self, array_type):
+        row = {
+            **self._MINIMAL,
+            "line_items": _build_array_column(
+                array_type,
+                [
+                    {"item_code": "sku1", "name": "first", "qty": "1", "price": "9.99", "cat": "books"},
+                    {"item_code": "sku2", "name": "second", "qty": "2", "price": "5.00", "cat": "toys"},
+                ],
+            ),
+        }
+        item = oc_handler.build_items([row])[0]
+        assert len(item.line_items) == 2
+        assert item.line_items[0].item_code == "sku1"
+
+    @pytest.mark.parametrize("array_type", [list, np.ndarray])
+    def test_multi_element_privacy_settings(self, array_type):
+        row = {
+            **self._MINIMAL,
+            "privacy_settings": _build_array_column(
+                array_type,
+                [
+                    {"privacy_type": "GDPR", "is_applicable": "true", "consent_string": "abc"},
+                    {"privacy_type": "CCPA", "is_applicable": "false", "consent_string": "xyz"},
+                ],
+            ),
+        }
+        item = oc_handler.build_items([row])[0]
+        assert len(item.privacy_settings) == 2
+        assert item.privacy_settings[0].privacy_type == "GDPR"
+
+    @pytest.mark.parametrize("array_type", [list, np.ndarray])
+    def test_collect_raw_pii_ids_keeps_only_pii_types(self, array_type):
+        rows = [
+            {
+                **self._MINIMAL,
+                "user_ids": _build_array_column(
+                    array_type,
+                    [{"type": "Email", "id": "a@example.com"}, {"type": "TDID", "id": "device-1"}],
+                ),
+            }
+        ]
+        assert oc_handler.collect_raw_pii_ids_per_row(rows) == [["a@example.com"]]
+
+    def test_collect_raw_pii_ids_handles_missing_user_ids(self):
+        assert oc_handler.collect_raw_pii_ids_per_row([self._MINIMAL]) == [[]]
