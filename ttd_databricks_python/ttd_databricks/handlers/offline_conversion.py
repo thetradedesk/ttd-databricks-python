@@ -66,7 +66,7 @@ def build_items(items_data: list[dict[str, Any]]) -> list[OfflineConversionDataI
         }
 
         raw_user_ids = row.get("user_ids")
-        if raw_user_ids:
+        if raw_user_ids is not None and len(raw_user_ids) > 0:
             kwargs["user_id_array"] = [[_user_id_type(user_id["type"]), user_id["id"]] for user_id in raw_user_ids]
 
         for field in ITEM_OPTIONAL_FIELDS:
@@ -75,7 +75,7 @@ def build_items(items_data: list[dict[str, Any]]) -> list[OfflineConversionDataI
                 kwargs[field] = value
 
         raw_line_items = row.get("line_items")
-        if raw_line_items:
+        if raw_line_items is not None and len(raw_line_items) > 0:
             kwargs["line_items"] = [
                 RealTimeConversionEventLineItem(
                     **{k: v for k, v in (li if isinstance(li, dict) else li.asDict()).items() if v is not None}
@@ -84,7 +84,7 @@ def build_items(items_data: list[dict[str, Any]]) -> list[OfflineConversionDataI
             ]
 
         raw_privacy_settings = row.get("privacy_settings")
-        if raw_privacy_settings:
+        if raw_privacy_settings is not None and len(raw_privacy_settings) > 0:
             kwargs["privacy_settings"] = [
                 RealTimeConversionEventsPrivacySetting(
                     **{k: v for k, v in (ps if isinstance(ps, dict) else ps.asDict()).items() if v is not None}
@@ -103,7 +103,9 @@ def collect_raw_pii_ids_per_row(items_data: list[dict[str, Any]]) -> list[list[s
     """
     out: list[list[str]] = []
     for row in items_data:
-        raw_user_ids = row.get("user_ids") or []
+        raw_user_ids = row.get("user_ids")
+        if raw_user_ids is None:
+            raw_user_ids = []
         out.append(
             [entry["id"] for entry in raw_user_ids if entry["type"] and entry["type"].upper() in RAW_PII_ID_TYPES]
         )
