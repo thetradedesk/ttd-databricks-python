@@ -20,6 +20,7 @@ dependencies = [
     "ttd-data>=0.2.2,<0.3.0",
     "pandas>=1.0.5",
     "pyarrow>=4.0.0",
+    "setuptools>=63.4.1",
 ]
 
 [project.optional-dependencies]
