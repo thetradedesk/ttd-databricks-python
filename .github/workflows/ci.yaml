@@ -59,6 +59,31 @@ jobs:
       - name: Run pure unit tests
         run: pytest tests/ -m "not spark"
 
+  version-bump-check:
+    name: Version bump check
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check version was bumped
+        env:
+          LABELS: ${{ toJson(github.event.pull_request.labels.*.name) }}
+        run: |
+          if echo "$LABELS" | grep -q '"skip-version-bump"'; then
+            echo "Skipping version bump check (skip-version-bump label present)"
+            exit 0
+          fi
+          CURRENT=$(grep '^version' pyproject.toml | cut -d '"' -f 2)
+          BASE=$(git show origin/${{ github.base_ref }}:pyproject.toml | grep '^version' | cut -d '"' -f 2)
+          if [ "$CURRENT" = "$BASE" ]; then
+            echo "::error::Version not bumped. Update the version in pyproject.toml before merging (current: $CURRENT)."
+            exit 1
+          fi
+          echo "Version bumped: $BASE -> $CURRENT"
+
   spark-compatibility-tests:
     name: Spark compatibility tests (Python ${{ matrix.python-version }}, PySpark ${{ matrix.pyspark-version }})
     runs-on: ubuntu-latest
