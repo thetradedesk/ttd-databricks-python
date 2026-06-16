@@ -15,6 +15,7 @@ Python SDK for integrating Databricks with The Trade Desk Data API. Supports Fir
 - [SDK Example Usage](#sdk-example-usage)
 - [Authentication](#authentication)
 - [Supported Data API Endpoints](#supported-data-api-endpoints)
+- [UID2 Support](#uid2-support)
 - [Error Handling](#error-handling)
 - [Server Selection](#server-selection)
 - [Custom HTTP Client](#custom-http-client)
@@ -362,6 +363,16 @@ from ttd_databricks_python.ttd_databricks.schemas import validate_ttd_schema
 # Raises TTDSchemaValidationError if any required columns are missing.
 validate_ttd_schema(df=input_df, endpoint=TTDEndpoint.ADVERTISER)
 ```
+
+---
+
+## UID2 Support
+
+The SDK supports both submitting UID2s directly as identifiers as well as automatically resolving raw email addresses and phone numbers (including pre-hashed variants) to UID2s before sending to The Trade Desk Data API. To enable automatic resolution, pass a `uid2_config` to `TtdDatabricksClient.from_params()`.
+
+Email addresses and phone numbers can be submitted similar to other data types and are resolved to UID2s using the provided UID2 operator before calling The Trade Desk Data API. The Trade Desk Data API only receives resolved UID2s, never raw emails or phone numbers. Resolution happens per row in both `push_data` and `batch_process`, with UID2 mapping returned in a `uid2_resolutions` column on the output.
+
+To submit email addresses or phone numbers, set the `id_type` column in your input data to `Email`, `Phone`, `HashedEmail`, or `HashedPhone`, with the corresponding value in `id_value`.
 
 ---
 
