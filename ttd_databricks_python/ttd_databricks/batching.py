@@ -23,7 +23,7 @@ from ttd_databricks_python.ttd_databricks.contexts import TTDContext
 
 if TYPE_CHECKING:
     import pandas as pd
-    from ttd_data.uid2 import UID2Config
+    from ttd_data import ClientConfig
 
 # Per-worker-process DataClient singleton. Each executor runs the mapInPandas function in a
 # dedicated Python worker process, so there are no race conditions. Reusing the
@@ -43,7 +43,7 @@ def process_partitions(
     context: TTDContext,
     parallelism: Optional[int] = None,
     data_load_trace_id: Optional[str] = None,
-    uid2_config: Optional[UID2Config] = None,
+    client_config: Optional[ClientConfig] = None,
 ) -> DataFrame:
     """Process all rows through the API using a single mapInPandas pass.
 
@@ -56,6 +56,10 @@ def process_partitions(
     suitable for I/O-bound API workloads where tasks spend most of their time waiting
     on server responses. Falls back to _DEFAULT_PARALLELISM on serverless / Spark
     Connect where sparkContext is unavailable.
+
+    client_config is a snapshot of the driver DataClient's settings (server_url,
+    retry_config, timeout_ms, uid2_config), used to rebuild an equivalent DataClient
+    per worker.
     """
     if parallelism is None:
         try:
@@ -85,9 +89,12 @@ def process_partitions(
 
         global _worker_client
         if _worker_client is None:
-            # uid2_config (a plain @dataclass) is closure-captured and cloudpickled to workers;
-            # DataClient itself can't be — it holds open httpx connections.
-            _worker_client = DataClient(timeout_ms=10_000, uid2_config=uid2_config)
+            # Workers rebuild the client from the picklable client_config snapshot;
+            # DataClient itself can't be cloudpickled.
+            if client_config is None:
+                _worker_client = DataClient(timeout_ms=10_000)
+            else:
+                _worker_client = DataClient.from_config(client_config)
         client = _worker_client
         handler = importlib.import_module(handler_module)
 

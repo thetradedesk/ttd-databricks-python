@@ -9,13 +9,15 @@ from typing import TYPE_CHECKING, Any, Optional
 # Install via: pip install ttd-data
 # DataClient is the main HTTP client. The TTD-Auth token is passed per API call.
 from ttd_data import DataClient
+from ttd_data.types import OptionalNullable
+from ttd_data.uid2 import UID2Config
+from ttd_data.utils import RetryConfig
 
 from ttd_databricks_python.ttd_databricks.contexts import TTDContext
 from ttd_databricks_python.ttd_databricks.endpoints import TTDEndpoint
 
 if TYPE_CHECKING:
     from pyspark.sql import DataFrame, Row, SparkSession
-    from ttd_data.uid2 import UID2Config
 
 
 class TtdDatabricksClient:
@@ -39,7 +41,6 @@ class TtdDatabricksClient:
         data_api_client: DataClient,
         api_token: str,
         spark: Optional[SparkSession] = None,
-        uid2_config: Optional[UID2Config] = None,
     ) -> None:
         """
         Initialize TTD Databricks client via dependency injection.
@@ -48,10 +49,9 @@ class TtdDatabricksClient:
 
         Dependency Injection pattern:
         - data_api_client: Required. Injected DataClient instance (from ttd-data package).
+          `batch_process` rebuilds an equivalent DataClient per worker from
+          `data_api_client.config` — a single place to configure uid2/retry settings.
         - api_token: Required. TTD-Auth token passed to each API call for authentication.
-        - uid2_config: Optional. Forwarded to per-worker DataClient in `batch_process`
-          (DataClient instances aren't serializable, so workers build their own).
-          Not used by `push_data` — pass `uid2_config` to `data_api_client` directly for that path.
 
         Note: DataClient is from the external ttd-data package.
         For factory pattern (creating clients from tokens), use `from_params()` class method.
@@ -59,7 +59,6 @@ class TtdDatabricksClient:
         self._data_api_client = data_api_client
         self._api_token = api_token
         self._spark = spark
-        self._uid2_config = uid2_config
 
     @classmethod
     def from_params(
@@ -67,29 +66,32 @@ class TtdDatabricksClient:
         api_token: str,
         spark: Optional[SparkSession] = None,
         uid2_config: Optional[UID2Config] = None,
+        retry_config: OptionalNullable[RetryConfig] = None,
         server_url: Optional[str] = None,
+        timeout_ms: Optional[int] = None,
     ) -> TtdDatabricksClient:
         """
         Factory method to create TtdDatabricksClient from authentication tokens.
 
-        Creates DataClient internally with default configuration.
+        Creates DataClient internally with the given configuration.
 
         - api_token: Required. TTD API token for authentication (TTD-Auth header).
         - spark: Optional. SparkSession. Auto-detected from Databricks context if not provided.
         - uid2_config: Optional. Enables client-side resolution of raw PII identifiers
-          (Email/Phone/HashedEmail/HashedPhone) to UID2/EUID. Wired into both the
-          driver DataClient and the worker config used by `batch_process`.
+          (Email/Phone/HashedEmail/HashedPhone) to UID2/EUID.
+        - retry_config: Optional. Retry behavior for transient API errors (429/5xx).
         - server_url: Optional. Override the default TTD Data API server URL.
+        - timeout_ms: Optional. Per-request timeout in milliseconds.
 
         Returns: TtdDatabricksClient instance with internally created DataClient.
         """
-        data_api_client = DataClient(server_url=server_url, uid2_config=uid2_config)
-        return cls(
-            data_api_client=data_api_client,
-            api_token=api_token,
-            spark=spark,
+        data_api_client = DataClient(
             uid2_config=uid2_config,
+            retry_config=retry_config,
+            server_url=server_url,
+            timeout_ms=timeout_ms,
         )
+        return cls(data_api_client=data_api_client, api_token=api_token, spark=spark)
 
     # ------------------------------------------------------------------
     # Ad hoc mode
@@ -219,7 +221,7 @@ class TtdDatabricksClient:
             context,
             parallelism,
             data_load_trace_id,
-            self._uid2_config,
+            self._data_api_client.config,
         )
 
         output_df.write.format("delta").mode("append").saveAsTable(output_table)

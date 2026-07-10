@@ -390,49 +390,34 @@ def test_call_api_5xx_failure_leaves_resolution_null_for_all_rows() -> None:
 
 
 # --------------------------------------------------------------------------- #
-# from_params wires uid2_config into DataClient                                 #
+# from_params / batch_process config wiring                                     #
 # --------------------------------------------------------------------------- #
 
 
-def test_from_params_passes_uid2_config_to_dataclient() -> None:
+def _sample_retry_config():
+    from ttd_data.utils import BackoffStrategy, RetryConfig
+
+    return RetryConfig(
+        strategy="backoff",
+        backoff=BackoffStrategy(initial_interval=1000, max_interval=10000, exponent=1.5, max_elapsed_time=30000),
+        retry_connection_errors=True,
+    )
+
+
+def test_batch_process_config_is_derived_from_data_api_client() -> None:
+    # batch_process rebuilds the per-worker DataClient from data_api_client.config.
     from ttd_data.uid2 import IdentityScope, UID2Config
 
-    cfg = UID2Config(
+    uid2_cfg = UID2Config(
         base_url="https://uid2.example.com",
         api_key="key",
         client_secret="secret",
         identity_scope=IdentityScope.UID2,
     )
+    retry_cfg = _sample_retry_config()
 
-    with patch("ttd_databricks_python.ttd_databricks.ttd_client.DataClient") as mock_data_client:
-        TtdDatabricksClient.from_params(api_token="tok", uid2_config=cfg)
+    client = TtdDatabricksClient.from_params(api_token="tok", uid2_config=uid2_cfg, retry_config=retry_cfg)
 
-    mock_data_client.assert_called_once_with(server_url=None, uid2_config=cfg)
-
-
-def test_from_params_omits_uid2_config_when_not_provided() -> None:
-    with patch("ttd_databricks_python.ttd_databricks.ttd_client.DataClient") as mock_data_client:
-        TtdDatabricksClient.from_params(api_token="tok")
-
-    mock_data_client.assert_called_once_with(server_url=None, uid2_config=None)
-
-
-def test_from_params_stores_uid2_config_on_client_for_batch_process() -> None:
-    # batch_process workers can't reuse the driver's DataClient (httpx connections aren't
-    # cross-process safe). The client must hold uid2_config separately so it can be shipped
-    # to workers via cloudpickle.
-    from ttd_data.uid2 import IdentityScope, UID2Config
-
-    cfg = UID2Config(
-        base_url="https://uid2.example.com",
-        api_key="key",
-        client_secret="secret",
-        identity_scope=IdentityScope.UID2,
-    )
-    with patch("ttd_databricks_python.ttd_databricks.ttd_client.DataClient"):
-        client = TtdDatabricksClient.from_params(api_token="tok", uid2_config=cfg)
-
-    assert client._uid2_config is cfg
-
-
+    assert client._data_api_client.config.uid2_config is uid2_cfg
+    assert client._data_api_client.config.retry_config is retry_cfg
 
