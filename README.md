@@ -188,6 +188,8 @@ client = TtdDatabricksClient.from_params(
     api_token="<ttd-auth-token>",  # your TTD platform API token
     spark=spark,                   # optional; auto-detected from Databricks context
     # server_url="https://..."      # optional; see Server Selection
+    # retry_config=RetryConfig(...) # optional; retry transient errors (429/5xx), see Custom HTTP Client
+    # timeout_ms=10000               # optional; per-request timeout in milliseconds
 )
 ```
 
