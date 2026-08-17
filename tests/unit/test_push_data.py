@@ -130,6 +130,67 @@ def test_partial_failure_maps_error_to_correct_row(spark: SparkSession) -> None:
     assert by_id["def456"]["success"] is True
 
 
+def test_400_error_fails_only_its_own_batch_and_continues(spark: SparkSession) -> None:
+    # batch_size=1 -> 3 separate API calls: first succeeds, second hits a 400 (fails just
+    # that batch), third still runs and succeeds.
+    import httpx
+    from ttd_data.errors import DataError
+
+    data = [("TDID", "ok", "seg1"), ("TDID", "bad-request", "seg2"), ("TDID", "later-succeeds", "seg3")]
+    df = spark.createDataFrame(data, _REQUIRED_SCHEMA)
+
+    raw = MagicMock(spec=httpx.Response)
+    raw.status_code = 400
+    raw.text = "invalid segment"
+    raw.headers = httpx.Headers({})
+    client_error = DataError("bad request", raw)
+
+    mock_handler = _make_handler()
+    mock_handler.call_api.side_effect = [([], {}), client_error, ([], {})]
+
+    with patch("importlib.import_module", return_value=mock_handler):
+        result = _make_client(spark).push_data(df, _CONTEXT, batch_size=1)
+
+    by_id = {r["id_value"]: r for r in result.collect()}
+    assert len(by_id) == 3
+    assert by_id["ok"]["success"] is True
+    assert by_id["bad-request"]["success"] is False
+    assert by_id["bad-request"]["error_code"] == "Bad Request"
+    assert by_id["later-succeeds"]["success"] is True  # later batch still ran
+
+
+@pytest.mark.parametrize("status_code", [401, 403])
+def test_401_or_403_aborts_remaining_batches(spark: SparkSession, status_code: int) -> None:
+    # batch_size=1 -> 3 separate API calls: first succeeds, second hits a 401/403 (stops
+    # the run), third is never attempted. The successful row survives, the rejected row
+    # keeps the server's status, and only the untried row is ABORTED.
+    import httpx
+    from ttd_data.errors import DataError
+
+    data = [("TDID", "ok", "seg1"), ("TDID", "unauthorized", "seg2"), ("TDID", "never-attempted", "seg3")]
+    df = spark.createDataFrame(data, _REQUIRED_SCHEMA)
+
+    raw = MagicMock(spec=httpx.Response)
+    raw.status_code = status_code
+    raw.text = "not authorized"
+    raw.headers = httpx.Headers({})
+    client_error = DataError("auth error", raw)
+
+    mock_handler = _make_handler()
+    mock_handler.call_api.side_effect = [([], {}), client_error]
+
+    with patch("importlib.import_module", return_value=mock_handler):
+        result = _make_client(spark).push_data(df, _CONTEXT, batch_size=1)
+
+    by_id = {r["id_value"]: r for r in result.collect()}
+    assert len(by_id) == 3
+    assert by_id["ok"]["success"] is True  # earlier batch's result is not discarded
+    assert by_id["unauthorized"]["success"] is False
+    assert "not authorized" in by_id["unauthorized"]["error_message"]  # sent and rejected
+    assert by_id["never-attempted"]["success"] is False
+    assert by_id["never-attempted"]["error_code"] == "ABORTED"  # never sent
+
+
 def test_missing_required_column_raises_schema_validation_error(spark: SparkSession) -> None:
     schema = StructType(
         [

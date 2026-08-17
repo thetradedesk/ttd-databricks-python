@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Optional
-
 
 class TTDError(Exception):
     """Base exception for all TTD Databricks SDK errors."""
@@ -12,14 +10,13 @@ class TTDError(Exception):
 
 
 class TTDApiError(TTDError):
-    """Raised when the TTD API returns a non-2xx status for an entire batch request."""
+    """Raised when a batch hits a failure no later batch could survive, so the run must stop."""
 
-    def __init__(self, status_code: Optional[int], response_text: str, batch_index: int) -> None:
-        self.status_code = status_code
+    def __init__(self, response_text: str, batch_index: int, error_code: str) -> None:
         self.response_text = response_text
         self.batch_index = batch_index
-        status_str = str(status_code) if status_code is not None else "no response"
-        super().__init__(f"TTD API error (HTTP {status_str}) for batch {batch_index}: {response_text}")
+        self.error_code = error_code
+        super().__init__(f"TTD API error ({error_code}) for batch {batch_index}: {response_text}")
 
 
 class TTDConfigurationError(TTDError):
