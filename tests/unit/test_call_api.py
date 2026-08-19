@@ -5,9 +5,9 @@ _call_api :
   2. Maps failed_lines (by item number) to per-row result dicts.
      Rows with an item_number get their specific error.
      Rows without one fall back to the unattributable error (if any).
-  3. On 5xx, marks all rows as failed (transient — caller can retry).
-     On 4xx, raises TTDApiError — unrecoverable client error.
-  4. Raises TTDApiError on unexpected non-HTTP exceptions.
+  3. Marks all rows in the batch as failed for any error other than auth/permission.
+  4. Raises TTDApiError on an auth/permission failure, carrying the error_code the
+     failing batch's rows should get.
 
 The handler module import is patched so no real API calls are made.
 """
@@ -22,7 +22,7 @@ import pytest
 import httpx
 
 from ttd_data import DataClient
-from ttd_data.errors import DataError, NoResponseError
+from ttd_data.errors import DataError, NoResponseError, ResponseValidationError
 
 from ttd_databricks_python.ttd_databricks.contexts import AdvertiserContext
 from ttd_databricks_python.ttd_databricks.exceptions import TTDApiError
@@ -147,9 +147,9 @@ def test_attributable_row_gets_specific_error_others_get_unattributable_fallback
         results = client._call_api(_CONTEXT, rows, batch_index=0)
 
     assert results[0]["success"] is False
-    assert results[0]["error_code"] == "INVALID_ID"   # specific error preserved
+    assert results[0]["error_code"] == "INVALID_ID"  # specific error preserved
     assert results[1]["success"] is False
-    assert results[1]["error_code"] == "UNKNOWN"       # unattributable as fallback
+    assert results[1]["error_code"] == "UNKNOWN"  # unattributable as fallback
 
 
 def test_failed_line_with_null_message_and_code_fails_all_rows():
@@ -196,10 +196,13 @@ def test_no_response_error_from_handler_returns_failed_results():
         results = client._call_api(_CONTEXT, _make_rows(_ROW), batch_index=0)
         assert len(results) == 1
         assert results[0]["success"] is False
-        assert results[0]["error_message"] == "No response"
+        assert results[0]["error_message"] == "_FakeNoResponseError: No response"
+        # No HTTP status to report, so the exception name is the code — never NULL, which
+        # would be indistinguishable from a succeeded row.
+        assert results[0]["error_code"] == "_FakeNoResponseError"
 
 
-def test_4xx_error_raises_ttd_api_error():
+def test_400_error_fails_only_its_own_batch():
     client = _make_client()
     rows = _make_rows(_ROW, _ROW)
     mock_handler = _make_mock_handler()
@@ -212,24 +215,107 @@ def test_4xx_error_raises_ttd_api_error():
     mock_handler.call_api.side_effect = DataError("batch error", raw)
 
     with patch("importlib.import_module", return_value=mock_handler):
-        with pytest.raises(TTDApiError) as exc_info:
-            client._call_api(_CONTEXT, rows, batch_index=2)
+        results = client._call_api(_CONTEXT, rows, batch_index=2)
 
-    assert exc_info.value.status_code == 400
-    assert exc_info.value.batch_index == 2
-    assert "not configured" in exc_info.value.response_text
+    assert len(results) == 2
+    assert all(r["success"] is False for r in results)
+    assert all(r["error_code"] == "Bad Request" for r in results)
+    assert all("not configured" in r["error_message"] for r in results)
 
 
-
-def test_unexpected_exception_from_handler_raises_ttd_api_error_with_message():
+@pytest.mark.parametrize(("status_code", "expected_error_code"), [(401, "Unauthorized"), (403, "Forbidden")])
+def test_401_and_403_raise_ttd_api_error(status_code: int, expected_error_code: str):
     client = _make_client()
+    rows = _make_rows(_ROW, _ROW)
     mock_handler = _make_mock_handler()
-    mock_handler.build_items.return_value = [MagicMock()]
-    mock_handler.call_api.side_effect = ValueError("unexpected error")
+    mock_handler.build_items.return_value = [MagicMock(), MagicMock()]
+
+    raw = MagicMock(spec=httpx.Response)
+    raw.status_code = status_code
+    raw.text = "not authorized"
+    raw.headers = httpx.Headers({})
+    mock_handler.call_api.side_effect = DataError("auth error", raw)
 
     with patch("importlib.import_module", return_value=mock_handler):
         with pytest.raises(TTDApiError) as exc_info:
-            client._call_api(_CONTEXT, _make_rows(_ROW), batch_index=5)
+            client._call_api(_CONTEXT, rows, batch_index=2)
 
-    assert exc_info.value.batch_index == 5
-    assert "unexpected error" in exc_info.value.response_text
+    assert exc_info.value.error_code == expected_error_code
+    assert exc_info.value.batch_index == 2
+    assert "not authorized" in exc_info.value.response_text
+
+
+def test_response_validation_failure_fails_only_its_own_batch():
+    # Schema drift: the server returns 200 but the body doesn't match the SDK's model.
+    client = _make_client()
+    mock_handler = _make_mock_handler()
+    mock_handler.build_items.return_value = [MagicMock()]
+
+    raw = MagicMock(spec=httpx.Response)
+    raw.status_code = 200
+    raw.text = '{"FailedLines": "not-a-list"}'
+    raw.headers = httpx.Headers({})
+    mock_handler.call_api.side_effect = ResponseValidationError(
+        "Response validation failed", raw, ValueError("type mismatch"), body=raw.text
+    )
+
+    with patch("importlib.import_module", return_value=mock_handler):
+        results = client._call_api(_CONTEXT, _make_rows(_ROW), batch_index=3)
+
+    assert len(results) == 1
+    assert results[0]["success"] is False
+    assert results[0]["error_code"] == "ResponseValidationError"
+
+
+def test_unexpected_exception_is_reported_named_after_the_failure():
+    client = _make_client()
+    mock_handler = _make_mock_handler()
+    mock_handler.build_items.return_value = [MagicMock()]
+    mock_handler.call_api.side_effect = ValueError("bug in the SDK")
+
+    with patch("importlib.import_module", return_value=mock_handler):
+        results = client._call_api(_CONTEXT, _make_rows(_ROW), batch_index=5)
+
+    assert len(results) == 1
+    assert results[0]["success"] is False
+    assert results[0]["error_code"] == "ValueError"
+    assert results[0]["error_message"] == "ValueError: bug in the SDK"
+
+
+def test_build_items_failure_fails_only_its_own_batch():
+    # A malformed row makes build_items raise. Nothing was sent, and the failure is specific
+    # to this batch's own rows, so it must fail just this batch rather than raising and
+    # aborting every later batch too.
+    client = _make_client()
+    mock_handler = _make_mock_handler()
+    mock_handler.build_items.side_effect = ValueError("id_type 'Banana' is not supported")
+
+    with patch("importlib.import_module", return_value=mock_handler):
+        results = client._call_api(_CONTEXT, _make_rows(_ROW), batch_index=1)
+
+    mock_handler.call_api.assert_not_called()
+    assert len(results) == 1
+    assert results[0]["success"] is False
+    assert results[0]["error_code"] == "ValueError"
+    assert "not supported" in results[0]["error_message"]
+
+
+def test_non_standard_status_code_does_not_raise_out_of_the_handler():
+    # Load balancers and proxies (AWS ALB 460/463/464, nginx 499) return codes HTTPStatus()
+    # rejects. The phrase lookup must not blow up and escape as an unhandled ValueError.
+    client = _make_client()
+    mock_handler = _make_mock_handler()
+    mock_handler.build_items.return_value = [MagicMock()]
+
+    raw = MagicMock(spec=httpx.Response)
+    raw.status_code = 520
+    raw.text = "web server returned an unknown error"
+    raw.headers = httpx.Headers({})
+    mock_handler.call_api.side_effect = DataError("unknown error", raw, body=raw.text)
+
+    with patch("importlib.import_module", return_value=mock_handler):
+        results = client._call_api(_CONTEXT, _make_rows(_ROW), batch_index=0)
+
+    # Not a 401/403, so this batch fails and later batches still run.
+    assert results[0]["success"] is False
+    assert results[0]["error_code"] == "520"

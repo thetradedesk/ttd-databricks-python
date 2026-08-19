@@ -13,6 +13,7 @@ from ttd_data.types import OptionalNullable
 from ttd_data.uid2 import UID2Config
 from ttd_data.utils import RetryConfig
 
+from ttd_databricks_python.ttd_databricks.constants import ABORTED_ERROR_CODE, DEFAULT_RETRY_CONFIG
 from ttd_databricks_python.ttd_databricks.contexts import TTDContext
 from ttd_databricks_python.ttd_databricks.endpoints import TTDEndpoint
 
@@ -66,7 +67,7 @@ class TtdDatabricksClient:
         api_token: str,
         spark: Optional[SparkSession] = None,
         uid2_config: Optional[UID2Config] = None,
-        retry_config: OptionalNullable[RetryConfig] = None,
+        retry_config: OptionalNullable[RetryConfig] = DEFAULT_RETRY_CONFIG,
         server_url: Optional[str] = None,
         timeout_ms: Optional[int] = None,
     ) -> TtdDatabricksClient:
@@ -80,6 +81,7 @@ class TtdDatabricksClient:
         - uid2_config: Optional. Enables client-side resolution of raw PII identifiers
           (Email/Phone/HashedEmail/HashedPhone) to UID2/EUID.
         - retry_config: Optional. Retry behavior for transient API errors (429/5xx).
+          Defaults to DEFAULT_RETRY_CONFIG; pass None to disable retries.
         - server_url: Optional. Override the default TTD Data API server URL.
         - timeout_ms: Optional. Per-request timeout in milliseconds.
 
@@ -112,6 +114,9 @@ class TtdDatabricksClient:
         Returns: Original columns + success, error_code, error_message, processed_timestamp,
         and `uid2_resolutions` (array<struct>, empty unless `uid2_config` was provided).
 
+        Does not raise; results already collected are always returned. An auth or permission
+        failure stops the run — later rows get error_code="ABORTED", safe to re-run.
+
         - df: Input Spark DataFrame. Must contain all non-nullable columns for context.endpoint.
           Nullable columns may be omitted — they will be filled with null automatically.
           Extra columns are preserved in the output but ignored during API submission.
@@ -121,7 +126,9 @@ class TtdDatabricksClient:
         - data_load_trace_id: Optional trace ID passed for debugging. Passed as
           DataLoadTraceId in the API request body. If None, omitted from the request.
         """
+        from ttd_databricks_python.ttd_databricks.exceptions import TTDApiError
         from ttd_databricks_python.ttd_databricks.schemas import get_output_schema, validate_ttd_schema
+        from ttd_databricks_python.ttd_databricks.utils import empty_resolution_value
 
         df = self._fill_nullable_columns(df, context.endpoint)
         validate_ttd_schema(df, context.endpoint)
@@ -130,10 +137,34 @@ class TtdDatabricksClient:
         all_rows = df.collect()
         result_rows: list[dict[str, Any]] = []
 
+        def record_failed(rows: list[Row], error_code: str, error_message: str, timestamp: datetime) -> None:
+            for row in rows:
+                merged = row.asDict()
+                merged.update(
+                    success=False,
+                    error_code=error_code,
+                    error_message=error_message,
+                    processed_timestamp=timestamp,
+                    **empty_resolution_value(),
+                )
+                result_rows.append(merged)
+
         for batch_index, i in enumerate(range(0, len(all_rows), batch_size)):
             batch = all_rows[i : i + batch_size]
             timestamp = datetime.now(timezone.utc)
-            api_results = self._call_api(context, batch, batch_index, data_load_trace_id)
+
+            try:
+                api_results = self._call_api(context, batch, batch_index, data_load_trace_id)
+            except TTDApiError as exc:
+                # Attempted, so it keeps its own error; everything after it is unsent, so ABORTED.
+                record_failed(batch, exc.error_code, exc.response_text, timestamp)
+                record_failed(
+                    all_rows[i + len(batch) :],
+                    ABORTED_ERROR_CODE,
+                    f"Aborted batch due to unrecoverable error: {exc}",
+                    timestamp,
+                )
+                break
 
             for row, result in zip(batch, api_results, strict=True):
                 merged = row.asDict()
@@ -163,6 +194,9 @@ class TtdDatabricksClient:
         Read from input table, batch process, write to output table.
 
         Updates metadata table if provided.
+
+        Does not raise. An auth or permission failure aborts its own partition — later rows
+        there get error_code="ABORTED", safe to re-run. Other partitions carry on.
 
         - context: Typed context object (AdvertiserContext, ThirdPartyContext, etc.)
           Contains endpoint-specific config (data_provider_id, advertiser_id, etc.)
@@ -392,36 +426,32 @@ class TtdDatabricksClient:
         Delegates item-building and the API call to the endpoint-specific handler module,
         then applies shared failed_lines parsing to produce per-row result dicts with keys:
         success (bool), error_code (Optional[str]), error_message (Optional[str]),
-        and `uid2_resolutions` (list[dict], empty on transient/4xx errors).
+        and `uid2_resolutions` (list[dict], empty on every failure path).
 
         - rows: Spark Rows from df.collect(); must contain the mandatory columns for context.endpoint.
         - batch_index: Zero-based batch number used in TTDApiError if the call fails.
 
-        Transient errors (timeouts, stale connections, no response, server 5xx) return
-        all-failed results so the caller can continue with remaining batches.
+        Any failure other than auth or permission fails just this batch, so the caller can
+        continue with the remaining ones.
 
         Raises:
-            TTDApiError: On unrecoverable errors (4xx client errors, unexpected exceptions).
+            TTDApiError: On an auth or permission failure, carrying the error_code the caller
+                should label this batch's rows with.
         """
-        import http
         import importlib
-
-        import httpx
-        from ttd_data.errors import DataError, NoResponseError
 
         from ttd_databricks_python.ttd_databricks.exceptions import TTDApiError
         from ttd_databricks_python.ttd_databricks.utils import (
             attach_resolutions,
+            classify_failure,
             empty_resolution_value,
             parse_failed_lines,
         )
 
         handler = importlib.import_module(context.endpoint.handler_module)
         rows_data = [row.asDict() for row in rows]
-        items = handler.build_items(rows_data)
-        raw_pii_ids_per_row = handler.collect_raw_pii_ids_per_row(rows_data)
 
-        def fail_all(error_code: str | None, error_message: str) -> list[dict[str, Any]]:
+        def fail_all(error_code: str, error_message: str) -> list[dict[str, Any]]:
             return [
                 {
                     "success": False,
@@ -432,37 +462,24 @@ class TtdDatabricksClient:
                 for _ in rows
             ]
 
-        failed_lines: list[Any] = []
-        identity_resolutions: dict[str, Any] = {}
         try:
+            items = handler.build_items(rows_data)
+            raw_pii_ids_per_row = handler.collect_raw_pii_ids_per_row(rows_data)
             failed_lines, identity_resolutions = handler.call_api(
                 self._data_api_client, context, items, self._api_token, data_load_trace_id
             )
-        except (
-            httpx.TimeoutException,
-            httpx.RemoteProtocolError,
-            NoResponseError,
-        ) as exc:
-            return fail_all(None, str(exc))
-        except DataError as exc:
-            error_code = http.HTTPStatus(exc.status_code).phrase
-            if exc.status_code >= 500:
-                # Transient server error, mark batch as failed and continue.
-                return fail_all(error_code, exc.body)
-            raise TTDApiError(
-                status_code=exc.status_code,
-                response_text=exc.body,
-                batch_index=batch_index,
-            ) from exc
+            results = parse_failed_lines(failed_lines, len(rows))
+            attach_resolutions(results, raw_pii_ids_per_row, identity_resolutions)
         except Exception as exc:
+            transient, error_code, error_message = classify_failure(exc)
+            if transient:
+                return fail_all(error_code, error_message)
             raise TTDApiError(
-                status_code=None,
-                response_text=str(exc),
+                response_text=error_message,
                 batch_index=batch_index,
+                error_code=error_code,
             ) from exc
 
-        results = parse_failed_lines(failed_lines, len(rows))
-        attach_resolutions(results, raw_pii_ids_per_row, identity_resolutions)
         return results
 
     @staticmethod

@@ -188,7 +188,8 @@ client = TtdDatabricksClient.from_params(
     api_token="<ttd-auth-token>",  # your TTD platform API token
     spark=spark,                   # optional; auto-detected from Databricks context
     # server_url="https://..."      # optional; see Server Selection
-    # retry_config=RetryConfig(...) # optional; retry transient errors (429/5xx), see Custom HTTP Client
+    # retry_config=RetryConfig(...) # optional; transient errors (429/5xx) are retried by
+                                    # default, pass None to disable. See Custom HTTP Client
     # timeout_ms=10000               # optional; per-request timeout in milliseconds
 )
 ```
@@ -382,10 +383,11 @@ To submit email addresses or phone numbers, set the `id_type` column in your inp
 
 All SDK exceptions inherit from `TTDError`.
 
+Both `push_data` abd `batch_process` do not raise API call failures — a batch that hits an unrecoverable error fails with its error code, and rows succeeding that were never sent The Trade Desk and fail with `error_code="ABORTED"`. Both are captured inline in the result DataFrame via the `success`, `error_code`, and `error_message` columns, so processing is never interrupted by API or row-level failures.
+
 ```python
 from ttd_databricks_python.ttd_databricks.exceptions import (
     TTDError,
-    TTDApiError,
     TTDConfigurationError,
     TTDSchemaValidationError,
 )
@@ -394,8 +396,6 @@ try:
     result_df = client.push_data(df=input_df, context=context)
 except TTDSchemaValidationError as e:
     print(f"Missing columns: {e.missing_columns}")
-except TTDApiError as e:
-    print(f"API error on batch {e.batch_index}: {e.status_code} — {e.response_text}")
 except TTDConfigurationError as e:
     print(f"Configuration error: {e}")
 ```
@@ -403,10 +403,7 @@ except TTDConfigurationError as e:
 | Exception | Cause |
 |---|---|
 | `TTDSchemaValidationError` | DataFrame is missing required columns for the endpoint |
-| `TTDApiError` | HTTP error or no response from the TTD Data API |
 | `TTDConfigurationError` | SparkSession not found or PySpark not installed |
-
-For `push_data`, row-level errors are also captured inline in the result DataFrame via the `success`, `error_code`, and `error_message` columns — so processing is not interrupted by individual row failures.
 
 ---
 

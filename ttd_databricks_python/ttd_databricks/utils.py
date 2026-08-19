@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import http
 from typing import Any, Optional
 
 from ttd_databricks_python.ttd_databricks.schemas import UID2_RESOLUTIONS_COLUMN
@@ -10,6 +11,31 @@ from ttd_databricks_python.ttd_databricks.schemas import UID2_RESOLUTIONS_COLUMN
 def empty_resolution_value() -> dict[str, list[Any]]:
     """Return a fresh empty `uid2_resolutions` value for failure paths."""
     return {UID2_RESOLUTIONS_COLUMN: []}
+
+
+def classify_failure(exc: Exception) -> tuple[bool, str, str]:
+    """Classify a failed API call as (transient, error_code, error_message).
+
+    Transient failures fail only their own batch; a later batch can still succeed. Auth and
+    permission failures are not transient — they recur on every batch, so the run stops.
+    """
+    from ttd_data.errors import DataError, ResponseValidationError
+
+    if isinstance(exc, DataError) and not isinstance(exc, ResponseValidationError):
+        if exc.status_code in (http.HTTPStatus.UNAUTHORIZED, http.HTTPStatus.FORBIDDEN):
+            return False, _status_label(exc.status_code), exc.body
+        return True, _status_label(exc.status_code), exc.body
+    # No HTTP status to report, so the exception name is the code: ReadTimeout, ValueError, etc.
+    # Never NULL, which would be indistinguishable from a succeeded row.
+    return True, type(exc).__name__, f"{type(exc).__name__}: {getattr(exc, 'body', exc)}"
+
+
+def _status_label(status_code: int) -> str:
+    """Label for an HTTP status: its reason phrase, or the bare code if not IANA-registered."""
+    try:
+        return http.HTTPStatus(status_code).phrase
+    except ValueError:
+        return str(status_code)
 
 
 def parse_failed_lines(failed_lines: list[Any], row_count: int) -> list[dict[str, Any]]:
