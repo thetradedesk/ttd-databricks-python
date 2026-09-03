@@ -198,20 +198,21 @@ client = TtdDatabricksClient.from_params(
 
 Provide your own [`DataClient`](https://github.com/thetradedesk/ttd-data-python/blob/main/src/ttd_data/sdk.py) instance to control the underlying HTTP transport directly.
 Use this when you need to configure options not exposed by `from_params()`, or to inject a mock in tests.
+The `DataClient` you pass in must carry your API token as `ttd_auth`; every request the SDK makes authenticates with it.
 
 ```python
 from ttd_data import DataClient
 from ttd_databricks_python.ttd_databricks import TtdDatabricksClient
 
-# Configure DataClient with custom HTTP settings.
+# Configure DataClient with your API token and custom HTTP settings.
 data_client = DataClient(
+    ttd_auth="<ttd-auth-token>",                      # your TTD platform API token
     server_url="https://custom-server.example.com",  # override default server URL
     timeout_ms=10000,                                 # request timeout in milliseconds
 )
 
 client = TtdDatabricksClient(
     data_api_client=data_client,
-    api_token="<ttd-auth-token>",
     spark=spark,  # optional; spark variable available from the Databricks notebook runtime
 )
 ```
@@ -456,15 +457,13 @@ from ttd_data.utils.retries import BackoffStrategy, RetryConfig
 from ttd_databricks_python.ttd_databricks import TtdDatabricksClient
 
 data_client = DataClient(
+    ttd_auth="<ttd-auth-token>",                      # your TTD platform API token
     server_url="https://custom-server.example.com",  # override default server URL
     timeout_ms=10000,                                 # request timeout in milliseconds
     retry_config=RetryConfig("backoff", BackoffStrategy(1000, 60000, 1.5, 3600000), True),  # custom retry config
 )
 
-client = TtdDatabricksClient(
-    data_api_client=data_client,
-    api_token="<ttd-auth-token>",
-)
+client = TtdDatabricksClient(data_api_client=data_client)
 ```
 
 In batch processing mode, a `DataClient` singleton is maintained per Spark worker process to enable HTTP connection reuse across batches, reducing overhead during distributed execution.

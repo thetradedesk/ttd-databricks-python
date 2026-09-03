@@ -37,7 +37,6 @@ def call_api(
     client: DataClient,
     context: DeletionOptOutMerchantContext,
     items: list[PartnerDsrDataItem],
-    api_token: str,
     data_load_trace_id: Optional[str] = None,
 ) -> tuple[list[Any], dict[str, UID2Resolution]]:
     """Call data_subject_request_merchant_data.
@@ -49,7 +48,6 @@ def call_api(
 
     try:
         response = client.deletion_opt_out.data_subject_request_merchant_data(
-            ttd_auth=api_token,
             merchant_id=context.merchant_id,
             items=items,
             data_load_trace_id=data_load_trace_id if data_load_trace_id is not None else UNSET,

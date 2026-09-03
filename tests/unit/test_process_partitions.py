@@ -17,11 +17,12 @@ from collections import Counter
 from collections.abc import Iterator
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import Optional
 
 import pytest
 from pyspark.sql import SparkSession
 from pyspark.sql.types import StringType, StructField, StructType, TimestampType
-from ttd_data import ClientConfig
+from ttd_data import DataClient
 
 from ttd_databricks_python.ttd_databricks.batching import process_partitions
 from ttd_databricks_python.ttd_databricks.contexts import AdvertiserContext
@@ -29,16 +30,15 @@ from ttd_databricks_python.ttd_databricks.schemas import get_output_schema
 
 pytestmark = pytest.mark.spark
 
-# Pinned so request counts stay exact: retry_config=None leaves the SDK's retry wrapper
-# off, so each batch makes exactly one call even when the stub returns a retryable 5xx.
+_TOKEN = "not-a-real-token"
+
+# Snapshotted off a real DataClient rather than hand-built, so the test tracks whatever
+# fields ClientConfig carries in the installed ttd-data.
+# retry_config=None leaves the SDK's retry wrapper off, keeping request counts exact: each
+# batch makes exactly one call even when the stub returns a retryable 5xx.
 # Shared by both tests — workers cache one DataClient per process, so a differing config
 # in a second test would be silently ignored.
-_NO_RETRY_CLIENT_CONFIG = ClientConfig(
-    server_url=None,
-    retry_config=None,
-    timeout_ms=10_000,
-    uid2_config=None,
-)
+_NO_RETRY_CLIENT_CONFIG = DataClient(ttd_auth=_TOKEN, retry_config=None, timeout_ms=10_000).config
 
 
 class _StubHandler(BaseHTTPRequestHandler):
@@ -46,6 +46,7 @@ class _StubHandler(BaseHTTPRequestHandler):
 
     status_code = 500
     request_count = 0
+    auth_headers: list[Optional[str]] = []
     # ThreadingHTTPServer handles each request on its own thread; `+= 1` is a
     # non-atomic read-modify-write, so guard it rather than relying on the spark
     # fixture staying single-threaded.
@@ -56,10 +57,12 @@ class _StubHandler(BaseHTTPRequestHandler):
         with cls.counter_lock:
             cls.status_code = status_code
             cls.request_count = 0
+            cls.auth_headers = []
 
     def do_POST(self) -> None:  # noqa: N802 — required by stdlib BaseHTTPRequestHandler
         with type(self).counter_lock:
             type(self).request_count += 1
+            type(self).auth_headers.append(self.headers.get("TTD-Auth"))
         body = b'{"Message":"forced error for test"}'
         self.send_response(type(self).status_code)
         self.send_header("Content-Type", "application/json")
@@ -112,7 +115,6 @@ def test_mapinpandas_wires_up_and_round_trips(spark: SparkSession, stub_server: 
         df=input_df,
         batch_size=3,
         output_schema=output_schema,
-        api_token="not-a-real-token",
         context=context,
         parallelism=2,
         client_config=_NO_RETRY_CLIENT_CONFIG,
@@ -127,6 +129,9 @@ def test_mapinpandas_wires_up_and_round_trips(spark: SparkSession, stub_server: 
     assert result_df.schema.fieldNames() == output_schema.fieldNames()
     # 4. Input column values survive Arrow → pandas → dict → pandas → Arrow round-trip.
     assert {row["id_value"] for row in result_rows} == set(input_ids)
+    # 5. The worker's rebuilt DataClient authenticates: ttd_auth travels in the client_config
+    #    snapshot, not as a separate per-call argument.
+    assert set(_StubHandler.auth_headers) == {_TOKEN}
 
 
 @pytest.mark.parametrize(
@@ -149,7 +154,6 @@ def test_401_and_403_stop_partition_without_failing_job(spark: SparkSession, stu
         df=input_df,
         batch_size=3,
         output_schema=output_schema,
-        api_token="not-a-real-token",
         context=context,
         parallelism=1,
         client_config=_NO_RETRY_CLIENT_CONFIG,
@@ -182,7 +186,6 @@ def test_other_4xx_fails_only_its_own_batch(spark: SparkSession, stub_server: st
         df=input_df,
         batch_size=3,
         output_schema=output_schema,
-        api_token="not-a-real-token",
         context=context,
         parallelism=1,
         client_config=_NO_RETRY_CLIENT_CONFIG,
