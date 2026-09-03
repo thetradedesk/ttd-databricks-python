@@ -39,11 +39,10 @@ def process_partitions(
     df: DataFrame,
     batch_size: int,
     output_schema: StructType,
-    api_token: str,
     context: TTDContext,
+    client_config: ClientConfig,
     parallelism: Optional[int] = None,
     data_load_trace_id: Optional[str] = None,
-    client_config: Optional[ClientConfig] = None,
 ) -> DataFrame:
     """Process all rows through the API using a single mapInPandas pass.
 
@@ -57,7 +56,7 @@ def process_partitions(
     on server responses. Falls back to _DEFAULT_PARALLELISM on serverless / Spark
     Connect where sparkContext is unavailable.
 
-    client_config is a snapshot of the driver DataClient's settings (server_url,
+    client_config is a snapshot of the driver DataClient's settings (ttd_auth, server_url,
     retry_config, timeout_ms, uid2_config), used to rebuild an equivalent DataClient
     per worker.
 
@@ -81,7 +80,7 @@ def process_partitions(
         import pandas as pd
         from ttd_data import DataClient
 
-        from ttd_databricks_python.ttd_databricks.constants import ABORTED_ERROR_CODE, DEFAULT_RETRY_CONFIG
+        from ttd_databricks_python.ttd_databricks.constants import ABORTED_ERROR_CODE
         from ttd_databricks_python.ttd_databricks.utils import (
             attach_resolutions,
             classify_failure,
@@ -92,11 +91,9 @@ def process_partitions(
         global _worker_client
         if _worker_client is None:
             # Workers rebuild the client from the picklable client_config snapshot;
-            # DataClient itself can't be cloudpickled.
-            if client_config is None:
-                _worker_client = DataClient(timeout_ms=10_000, retry_config=DEFAULT_RETRY_CONFIG)
-            else:
-                _worker_client = DataClient.from_config(client_config)
+            # DataClient itself can't be cloudpickled. The snapshot carries ttd_auth, so the
+            # rebuilt client authenticates exactly as the driver's client does.
+            _worker_client = DataClient.from_config(client_config)
         client = _worker_client
         handler = importlib.import_module(handler_module)
 
@@ -139,9 +136,7 @@ def process_partitions(
             try:
                 items = handler.build_items(batch_rows)
                 raw_pii_ids_per_row = handler.collect_raw_pii_ids_per_row(batch_rows)
-                failed_lines, identity_resolutions = handler.call_api(
-                    client, context, items, api_token, data_load_trace_id
-                )
+                failed_lines, identity_resolutions = handler.call_api(client, context, items, data_load_trace_id)
                 row_results = parse_failed_lines(failed_lines, len(batch_rows))
                 attach_resolutions(row_results, raw_pii_ids_per_row, identity_resolutions)
             except Exception as exc:

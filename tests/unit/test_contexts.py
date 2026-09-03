@@ -14,7 +14,6 @@ from ttd_databricks_python.ttd_databricks.contexts import (
 )
 from ttd_databricks_python.ttd_databricks.endpoints import TTDEndpoint
 
-
 _REQUEST_TYPE = PartnerDsrRequestType.OPT_OUT
 _DATA_ORIGINS = [DataOrigin(id="test-origin", type=DataOriginType.DATA_PROVIDER)]
 
@@ -72,9 +71,7 @@ def test_deletion_optout_advertiser_context_verify_context_pickling():
 
 
 def test_deletion_optout_thirdparty_context_verify_context_pickling():
-    ctx = DeletionOptOutThirdPartyContext(
-        data_provider_id="prov123", request_type=_REQUEST_TYPE, brand_id="brand99"
-    )
+    ctx = DeletionOptOutThirdPartyContext(data_provider_id="prov123", request_type=_REQUEST_TYPE, brand_id="brand99")
     restored = pickle.loads(pickle.dumps(ctx))
     assert restored.data_provider_id == "prov123"
     assert restored.request_type == _REQUEST_TYPE

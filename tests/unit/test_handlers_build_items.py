@@ -4,20 +4,19 @@ These are pure Python data-transformation tests — no Spark, no real API calls.
 """
 
 from datetime import datetime, timezone
-from typing import Union
 
 import numpy as np
 import pytest
+from ttd_data.models import AdvertiserDataItem, OfflineConversionDataItem, PartnerDsrDataItem, ThirdPartyDataItem
+from ttd_data.types import UNSET
 
 import ttd_databricks_python.ttd_databricks.handlers.advertiser as adv_handler
-from ttd_databricks_python.ttd_databricks.id_types import normalize_id_type
 import ttd_databricks_python.ttd_databricks.handlers.deletion_optout_advertiser as del_adv_handler
 import ttd_databricks_python.ttd_databricks.handlers.deletion_optout_merchant as del_merch_handler
 import ttd_databricks_python.ttd_databricks.handlers.deletion_optout_thirdparty as del_tp_handler
 import ttd_databricks_python.ttd_databricks.handlers.offline_conversion as oc_handler
 import ttd_databricks_python.ttd_databricks.handlers.third_party as tp_handler
-from ttd_data.models import AdvertiserDataItem, OfflineConversionDataItem, PartnerDsrDataItem, ThirdPartyDataItem
-from ttd_data.types import UNSET
+from ttd_databricks_python.ttd_databricks.id_types import normalize_id_type
 
 # UNSET is not a singleton — the SDK creates fresh Unset() instances per field.
 # Use isinstance check rather than identity (is).
@@ -27,7 +26,7 @@ _UnsetType = type(UNSET)
 # An array<struct> column reaches build_items as a list via the adhoc path
 # (collect + asDict) and as a numpy array via the batch path (mapInPandas).
 # build_items must handle both, so array-column tests run against each shape.
-def _build_array_column(array_type: type, items: list[dict]) -> Union[list, np.ndarray]:
+def _build_array_column(array_type: type, items: list[dict]) -> list | np.ndarray:
     return items if array_type is list else np.array(items, dtype=object)
 
 
@@ -43,7 +42,7 @@ class TestAdvertiserBuildItems:
         # Handler maps id_type → AdvertiserDataItem field dynamically: {d["id_type"]: d["id_value"]}
         item = adv_handler.build_items([self._MINIMAL])[0]
         assert isinstance(item, AdvertiserDataItem)
-        assert getattr(item, "tdid") == "test-tdid-value"
+        assert item.tdid == "test-tdid-value"
         assert item.data[0].name == "test-segment-name"
 
     def test_none_optional_fields_are_not_sent_to_api(self):
@@ -76,7 +75,7 @@ class TestThirdPartyBuildItems:
     def test_builds_third_party_data_item_with_correct_fields(self):
         item = tp_handler.build_items([self._MINIMAL])[0]
         assert isinstance(item, ThirdPartyDataItem)
-        assert getattr(item, "tdid") == "test-tdid-value"
+        assert item.tdid == "test-tdid-value"
         assert item.data[0].name == "test-segment-name"
 
     def test_none_optional_fields_are_not_sent_to_api(self):
@@ -99,19 +98,19 @@ class TestThirdPartyBuildItems:
 def test_deletion_optout_advertiser_returns_partner_dsr_item_with_correct_id():
     item = del_adv_handler.build_items([{"id_type": "TDID", "id_value": "test-advertiser-tdid"}])[0]
     assert isinstance(item, PartnerDsrDataItem)
-    assert getattr(item, "tdid") == "test-advertiser-tdid"
+    assert item.tdid == "test-advertiser-tdid"
 
 
 def test_deletion_optout_thirdparty_returns_partner_dsr_item_with_correct_id():
     item = del_tp_handler.build_items([{"id_type": "UID2", "id_value": "test-thirdparty-uid2"}])[0]
     assert isinstance(item, PartnerDsrDataItem)
-    assert getattr(item, "uid2") == "test-thirdparty-uid2"
+    assert item.uid2 == "test-thirdparty-uid2"
 
 
 def test_deletion_optout_merchant_returns_partner_dsr_item_with_correct_id():
     item = del_merch_handler.build_items([{"id_type": "TDID", "id_value": "test-merchant-tdid"}])[0]
     assert isinstance(item, PartnerDsrDataItem)
-    assert getattr(item, "tdid") == "test-merchant-tdid"
+    assert item.tdid == "test-merchant-tdid"
 
 
 # --------------------------------------------------------------------------- #
@@ -143,8 +142,13 @@ class TestOfflineConversionBuildItems:
 
     def test_all_user_id_types_map_to_correct_codes(self):
         type_map = {
-            "TDID": "0", "DAID": "1", "UID2": "2", "UID2Token": "3",
-            "EUID": "4", "EUIDToken": "5", "RampID": "6",
+            "TDID": "0",
+            "DAID": "1",
+            "UID2": "2",
+            "UID2Token": "3",
+            "EUID": "4",
+            "EUIDToken": "5",
+            "RampID": "6",
         }
         for id_type, expected_code in type_map.items():
             row = {**self._MINIMAL, "user_ids": [{"type": id_type, "id": f"test-{id_type}-value"}]}

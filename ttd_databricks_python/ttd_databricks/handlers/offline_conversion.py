@@ -116,7 +116,6 @@ def call_api(
     client: DataClient,
     context: OfflineConversionContext,
     items: list[OfflineConversionDataItem],
-    api_token: str,
     data_load_trace_id: Optional[str] = None,
 ) -> tuple[list[Any], dict[str, UID2Resolution]]:
     """Call ingest_offline_conversion_data. Returns (failed_lines, identity_resolutions).
@@ -136,7 +135,6 @@ def call_api(
 
     try:
         response = client.offline_conversion.ingest_offline_conversion_data(
-            ttd_auth=api_token,
             data_provider_id=context.data_provider_id,
             user_id_array_metadata_format=["type", "id"] if has_user_id_array else UNSET,
             items=items,

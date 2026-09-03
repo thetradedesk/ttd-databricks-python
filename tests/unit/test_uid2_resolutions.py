@@ -16,11 +16,11 @@ from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
+from ttd_data import DataClient
+from ttd_data.uid2 import UID2Resolution
 
 import ttd_databricks_python.ttd_databricks.handlers.advertiser as adv_handler
 import ttd_databricks_python.ttd_databricks.handlers.offline_conversion as oc_handler
-from ttd_data import DataClient
-from ttd_data.uid2 import UID2Resolution
 from ttd_databricks_python.ttd_databricks.contexts import AdvertiserContext, OfflineConversionContext
 from ttd_databricks_python.ttd_databricks.endpoints import TTDEndpoint
 from ttd_databricks_python.ttd_databricks.id_types import is_raw_pii_id_type
@@ -30,7 +30,6 @@ from ttd_databricks_python.ttd_databricks.schemas import (
 )
 from ttd_databricks_python.ttd_databricks.ttd_client import TtdDatabricksClient
 from ttd_databricks_python.ttd_databricks.utils import attach_resolutions
-
 
 # --------------------------------------------------------------------------- #
 # id_types normalization                                                        #
@@ -306,7 +305,7 @@ class TestValidateOutputTableSchema:
 
 
 def _make_client() -> TtdDatabricksClient:
-    return TtdDatabricksClient(data_api_client=MagicMock(spec=DataClient), api_token="test-token")
+    return TtdDatabricksClient(data_api_client=MagicMock(spec=DataClient))
 
 
 def _make_rows(*dicts: dict) -> list[MagicMock]:
@@ -355,9 +354,7 @@ def test_call_api_attaches_uid2_resolutions_array_for_offline_conversion() -> No
     )
 
     with patch("importlib.import_module", return_value=mock_handler):
-        results = client._call_api(
-            OfflineConversionContext(data_provider_id="dp"), rows, batch_index=0
-        )
+        results = client._call_api(OfflineConversionContext(data_provider_id="dp"), rows, batch_index=0)
 
     assert len(results[0][UID2_RESOLUTIONS_COLUMN]) == 1
     assert results[0][UID2_RESOLUTIONS_COLUMN][0]["current_uid2"] == "uid2-y"
@@ -420,4 +417,4 @@ def test_batch_process_config_is_derived_from_data_api_client() -> None:
 
     assert client._data_api_client.config.uid2_config is uid2_cfg
     assert client._data_api_client.config.retry_config is retry_cfg
-
+    assert client._data_api_client.config.ttd_auth == "tok"
