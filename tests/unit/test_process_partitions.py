@@ -37,7 +37,9 @@ _NO_RETRY_CLIENT_CONFIG = ClientConfig(
     server_url=None,
     retry_config=None,
     timeout_ms=10_000,
+    ttd_auth="not-a-real-token",
     uid2_config=None,
+    graphql_server_url=None,
 )
 
 
@@ -46,6 +48,7 @@ class _StubHandler(BaseHTTPRequestHandler):
 
     status_code = 500
     request_count = 0
+    auth_headers: list[str | None] = []
     # ThreadingHTTPServer handles each request on its own thread; `+= 1` is a
     # non-atomic read-modify-write, so guard it rather than relying on the spark
     # fixture staying single-threaded.
@@ -56,10 +59,12 @@ class _StubHandler(BaseHTTPRequestHandler):
         with cls.counter_lock:
             cls.status_code = status_code
             cls.request_count = 0
+            cls.auth_headers = []
 
     def do_POST(self) -> None:  # noqa: N802 — required by stdlib BaseHTTPRequestHandler
         with type(self).counter_lock:
             type(self).request_count += 1
+            type(self).auth_headers.append(self.headers.get("TTD-Auth"))
         body = b'{"Message":"forced error for test"}'
         self.send_response(type(self).status_code)
         self.send_header("Content-Type", "application/json")
@@ -112,7 +117,6 @@ def test_mapinpandas_wires_up_and_round_trips(spark: SparkSession, stub_server: 
         df=input_df,
         batch_size=3,
         output_schema=output_schema,
-        api_token="not-a-real-token",
         context=context,
         parallelism=2,
         client_config=_NO_RETRY_CLIENT_CONFIG,
@@ -127,6 +131,9 @@ def test_mapinpandas_wires_up_and_round_trips(spark: SparkSession, stub_server: 
     assert result_df.schema.fieldNames() == output_schema.fieldNames()
     # 4. Input column values survive Arrow → pandas → dict → pandas → Arrow round-trip.
     assert {row["id_value"] for row in result_rows} == set(input_ids)
+    # 5. The worker's rebuilt DataClient authenticates: ttd_auth travels in the client_config
+    #    snapshot, not as a separate per-call argument.
+    assert set(_StubHandler.auth_headers) == {"not-a-real-token"}
 
 
 @pytest.mark.parametrize(
@@ -136,7 +143,9 @@ def test_mapinpandas_wires_up_and_round_trips(spark: SparkSession, stub_server: 
         403,  # token valid but not entitled to this advertiser or data provider
     ],
 )
-def test_401_and_403_stop_partition_without_failing_job(spark: SparkSession, stub_server: str, status_code: int) -> None:
+def test_401_and_403_stop_partition_without_failing_job(
+    spark: SparkSession, stub_server: str, status_code: int
+) -> None:
     """401/403 stop the partition without raising. The batch that was sent keeps
     the server's own status; every row after it is ABORTED, meaning it was never submitted."""
     rows = [("TDID", f"id-{i}", "seg-a", None, None) for i in range(7)]
@@ -149,7 +158,6 @@ def test_401_and_403_stop_partition_without_failing_job(spark: SparkSession, stu
         df=input_df,
         batch_size=3,
         output_schema=output_schema,
-        api_token="not-a-real-token",
         context=context,
         parallelism=1,
         client_config=_NO_RETRY_CLIENT_CONFIG,
@@ -182,7 +190,6 @@ def test_other_4xx_fails_only_its_own_batch(spark: SparkSession, stub_server: st
         df=input_df,
         batch_size=3,
         output_schema=output_schema,
-        api_token="not-a-real-token",
         context=context,
         parallelism=1,
         client_config=_NO_RETRY_CLIENT_CONFIG,

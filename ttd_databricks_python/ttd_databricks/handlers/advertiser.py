@@ -53,7 +53,6 @@ def call_api(
     client: DataClient,
     context: AdvertiserContext,
     items: list[AdvertiserDataItem],
-    api_token: str,
     data_load_trace_id: Optional[str] = None,
 ) -> tuple[list[Any], dict[str, UID2Resolution]]:
     """Call ingest_advertiser_data. Returns (failed_lines, identity_resolutions).
@@ -72,7 +71,6 @@ def call_api(
     try:
         response = client.advertiser.ingest_advertiser_data(
             advertiser_id=context.advertiser_id,
-            ttd_auth=api_token,
             data_provider_id=context.data_provider_id if context.data_provider_id is not None else UNSET,
             items=items,
             data_load_trace_id=data_load_trace_id if data_load_trace_id is not None else UNSET,

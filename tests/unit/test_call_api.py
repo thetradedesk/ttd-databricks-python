@@ -17,10 +17,8 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 import httpx
-
+import pytest
 from ttd_data import DataClient
 from ttd_data.errors import DataError, NoResponseError, ResponseValidationError
 
@@ -30,7 +28,7 @@ from ttd_databricks_python.ttd_databricks.ttd_client import TtdDatabricksClient
 
 
 def _make_client() -> TtdDatabricksClient:
-    return TtdDatabricksClient(data_api_client=MagicMock(spec=DataClient), api_token="test-token")
+    return TtdDatabricksClient(data_api_client=MagicMock(spec=DataClient))
 
 
 def _make_rows(*dicts: dict[str, Any]) -> list[MagicMock]:

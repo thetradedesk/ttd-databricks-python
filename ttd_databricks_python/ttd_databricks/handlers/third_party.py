@@ -53,7 +53,6 @@ def call_api(
     client: DataClient,
     context: ThirdPartyContext,
     items: list[ThirdPartyDataItem],
-    api_token: str,
     data_load_trace_id: Optional[str] = None,
 ) -> tuple[list[Any], dict[str, UID2Resolution]]:
     """Call ingest_third_party_data. Returns (failed_lines, identity_resolutions).
@@ -71,7 +70,6 @@ def call_api(
 
     try:
         response = client.third_party.ingest_third_party_data(
-            ttd_auth=api_token,
             data_provider_id=context.data_provider_id,
             items=items,
             is_user_id_already_hashed=context.is_user_id_already_hashed,
