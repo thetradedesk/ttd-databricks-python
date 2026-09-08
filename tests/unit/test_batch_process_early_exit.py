@@ -34,7 +34,6 @@ _REQUIRED_SCHEMA = StructType(
 def _make_client(spark: SparkSession) -> TtdDatabricksClient:
     return TtdDatabricksClient(
         data_api_client=MagicMock(spec=DataClient),
-        api_token="test-token",
         spark=spark,
     )
 

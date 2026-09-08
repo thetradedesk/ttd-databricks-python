@@ -306,7 +306,7 @@ class TestValidateOutputTableSchema:
 
 
 def _make_client() -> TtdDatabricksClient:
-    return TtdDatabricksClient(data_api_client=MagicMock(spec=DataClient), api_token="test-token")
+    return TtdDatabricksClient(data_api_client=MagicMock(spec=DataClient))
 
 
 def _make_rows(*dicts: dict) -> list[MagicMock]:
@@ -420,4 +420,5 @@ def test_batch_process_config_is_derived_from_data_api_client() -> None:
 
     assert client._data_api_client.config.uid2_config is uid2_cfg
     assert client._data_api_client.config.retry_config is retry_cfg
+    assert client._data_api_client.config.ttd_auth == "tok"
 

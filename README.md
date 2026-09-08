@@ -89,8 +89,7 @@ from ttd_data import DataClient
 from ttd_databricks_python.ttd_databricks import TtdDatabricksClient
 
 client = TtdDatabricksClient(
-    data_api_client=DataClient(),
-    api_token="<ttd-auth-token>",
+    data_api_client=DataClient(ttd_auth="<ttd-auth-token>"),
 )
 ```
 
@@ -98,7 +97,7 @@ The rest of this README uses (i). To configure the underlying HTTP transport, or
 
 #### Authentication
 
-All underlying API calls made within the SDK authenticate with a TTD API token, passed as `api_token` at client creation as shown above and sent as the `TTD-Auth` header. The SDK does not support `TtdSignature` based authentication.
+All underlying API calls made within the SDK authenticate with a TTD API token, given to the client once at creation as shown above and sent as the `TTD-Auth` header. The SDK does not support `TtdSignature` based authentication.
 
 See [OpenTTD](https://open.thetradedesk.com/advertiser/docsApp/Foundations/resources/doc/PlatformAuthentication) for instructions on how to create your API token.
 
@@ -584,8 +583,7 @@ from ttd_data import DataClient
 from ttd_databricks_python.ttd_databricks import TtdDatabricksClient
 
 client = TtdDatabricksClient(
-    data_api_client=DataClient(uid2_config=uid2_config),
-    api_token="<ttd-auth-token>",
+    data_api_client=DataClient(ttd_auth="<ttd-auth-token>", uid2_config=uid2_config),
 )
 ```
 
@@ -657,15 +655,13 @@ from ttd_data.utils.retries import BackoffStrategy, RetryConfig
 from ttd_databricks_python.ttd_databricks import TtdDatabricksClient
 
 data_client = DataClient(
+    ttd_auth="<ttd-auth-token>",                     # your TTD platform API token
     server_url="https://custom-server.example.com",  # override default server URL
-    timeout_ms=10000,                                 # request timeout in milliseconds
+    timeout_ms=10000,                                # request timeout in milliseconds
     retry_config=RetryConfig("backoff", BackoffStrategy(1000, 60000, 1.5, 3600000), True),  # custom retry config
 )
 
-client = TtdDatabricksClient(
-    data_api_client=data_client,
-    api_token="<ttd-auth-token>",
-)
+client = TtdDatabricksClient(data_api_client=data_client)
 ```
 
 In batch processing mode, a `DataClient` singleton is maintained per Spark worker process to enable HTTP connection reuse across batches, reducing overhead during distributed execution.

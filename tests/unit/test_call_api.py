@@ -30,7 +30,7 @@ from ttd_databricks_python.ttd_databricks.ttd_client import TtdDatabricksClient
 
 
 def _make_client() -> TtdDatabricksClient:
-    return TtdDatabricksClient(data_api_client=MagicMock(spec=DataClient), api_token="test-token")
+    return TtdDatabricksClient(data_api_client=MagicMock(spec=DataClient))
 
 
 def _make_rows(*dicts: dict[str, Any]) -> list[MagicMock]:
