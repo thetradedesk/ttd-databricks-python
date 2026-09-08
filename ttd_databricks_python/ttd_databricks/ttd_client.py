@@ -7,7 +7,8 @@ from typing import TYPE_CHECKING, Any, Optional
 
 # ttd-data is the external SDK for the TTD Data API.
 # Install via: pip install ttd-data
-# DataClient is the main HTTP client. The TTD-Auth token is passed per API call.
+# DataClient is the main HTTP client. It is given the TTD-Auth token when it is constructed,
+# and authenticates every request the SDK makes with it.
 from ttd_data import DataClient
 from ttd_data.types import OptionalNullable
 from ttd_data.uid2 import UID2Config
@@ -31,7 +32,7 @@ class TtdDatabricksClient:
     Supports two usage patterns:
 
     1. Dependency Injection (recommended for testing):
-       client = TtdDatabricksClient(data_api_client=DataClient(), api_token="...")
+       client = TtdDatabricksClient(data_api_client=DataClient(ttd_auth="..."))
 
     2. Factory method (convenience for notebooks):
        client = TtdDatabricksClient.from_params(api_token="...")
@@ -40,7 +41,6 @@ class TtdDatabricksClient:
     def __init__(
         self,
         data_api_client: DataClient,
-        api_token: str,
         spark: Optional[SparkSession] = None,
     ) -> None:
         """
@@ -49,16 +49,23 @@ class TtdDatabricksClient:
         Auto-detect spark session unless explicitly provided.
 
         Dependency Injection pattern:
-        - data_api_client: Required. Injected DataClient instance (from ttd-data package).
-          `batch_process` rebuilds an equivalent DataClient per worker from
-          `data_api_client.config` — a single place to configure uid2/retry settings.
-        - api_token: Required. TTD-Auth token passed to each API call for authentication.
+        - data_api_client: Required. Injected DataClient instance (from ttd-data package),
+          built with `ttd_auth` set to your TTD API token. `batch_process` rebuilds an
+          equivalent DataClient per worker from `data_api_client.config` — a single place
+          to configure the token and the uid2/retry settings.
 
         Note: DataClient is from the external ttd-data package.
         For factory pattern (creating clients from tokens), use `from_params()` class method.
         """
+        from ttd_databricks_python.ttd_databricks.exceptions import TTDConfigurationError
+
+        if data_api_client.config.ttd_auth is None:
+            raise TTDConfigurationError(
+                "data_api_client was created without a TTD API token. "
+                'Build it as DataClient(ttd_auth="<your-token>"), or use TtdDatabricksClient.from_params().'
+            )
+
         self._data_api_client = data_api_client
-        self._api_token = api_token
         self._spark = spark
 
     @classmethod
@@ -88,12 +95,13 @@ class TtdDatabricksClient:
         Returns: TtdDatabricksClient instance with internally created DataClient.
         """
         data_api_client = DataClient(
+            ttd_auth=api_token,
             uid2_config=uid2_config,
             retry_config=retry_config,
             server_url=server_url,
             timeout_ms=timeout_ms,
         )
-        return cls(data_api_client=data_api_client, api_token=api_token, spark=spark)
+        return cls(data_api_client=data_api_client, spark=spark)
 
     # ------------------------------------------------------------------
     # Ad hoc mode
@@ -248,14 +256,13 @@ class TtdDatabricksClient:
         output_schema = get_output_schema(df.schema)
         self._validate_output_table_schema(spark, output_table, output_schema)
         output_df = process_partitions(
-            df,
-            batch_size,
-            output_schema,
-            self._api_token,
-            context,
-            parallelism,
-            data_load_trace_id,
-            self._data_api_client.config,
+            df=df,
+            batch_size=batch_size,
+            output_schema=output_schema,
+            context=context,
+            client_config=self._data_api_client.config,
+            parallelism=parallelism,
+            data_load_trace_id=data_load_trace_id,
         )
 
         output_df.write.format("delta").mode("append").saveAsTable(output_table)
@@ -466,7 +473,7 @@ class TtdDatabricksClient:
             items = handler.build_items(rows_data)
             raw_pii_ids_per_row = handler.collect_raw_pii_ids_per_row(rows_data)
             failed_lines, identity_resolutions = handler.call_api(
-                self._data_api_client, context, items, self._api_token, data_load_trace_id
+                self._data_api_client, context, items, data_load_trace_id
             )
             results = parse_failed_lines(failed_lines, len(rows))
             attach_resolutions(results, raw_pii_ids_per_row, identity_resolutions)

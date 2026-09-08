@@ -19,7 +19,6 @@ pytestmark = pytest.mark.spark
 def _make_client(**kwargs) -> TtdDatabricksClient:  # type: ignore[no-untyped-def]
     return TtdDatabricksClient(
         data_api_client=MagicMock(spec=DataClient),
-        api_token="test-token",
         **kwargs,
     )
 
