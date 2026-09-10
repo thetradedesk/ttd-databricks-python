@@ -226,6 +226,9 @@ if failed_df.count():
 
 Use this for incremental, distributed processing backed by Delta tables. Only records added since the last run are sent.
 
+It is recommended to create a separate set of Delta tables for each advertiser or data provider
+you send data for. Pass `table_name` to the `setup_*` helpers to name each set.
+
 **One time steps:** Create the input, output, and metadata Delta tables. These are created once and reused by every future run — the metadata table is what tracks how far the last run got, so do not drop or recreate it between runs. The `setup_*` helpers return the existing table if it is already there, so they are safe to re-run.
 
 ```python
@@ -391,6 +394,10 @@ input_df = spark.createDataFrame(rows, schema=input_schema)
 
 ### Offline Conversion — `/providerapi/offlineconversion`
 
+**Retail:** commerce conversions such as in-store purchases can be uploaded using this same
+endpoint. Use the merchant-event fields (`merchant_id`, `event_name`, `order_id`, and `line_items`
+with at least one `item_code`) to upload these events.
+
 ```python
 from ttd_databricks_python.ttd_databricks import OfflineConversionContext
 
@@ -400,7 +407,11 @@ context = OfflineConversionContext(
 )
 ```
 
-**Mandatory columns:** `tracking_tag_id`, `timestamp_utc`. This endpoint takes a different shape from the audience endpoints — one row per conversion **event**, with identities nested in `user_ids` rather than flat `id_type`/`id_value` columns. `user_ids` is required unless `impression_id` is provided.
+**Mandatory columns:** `tracking_tag_id` and `timestamp_utc`. At least one of `user_ids` and
+`impression_id` must be present.
+
+This endpoint takes a different shape from the audience endpoints: one row per conversion **event**,
+with identities nested in `user_ids` rather than flat `id_type`/`id_value` columns.
 
 ```python
 from datetime import datetime, timezone
@@ -602,7 +613,7 @@ result_df = client.push_data(df=spark.createDataFrame(rows, schema=input_schema)
 result_df.select("id_type", "success", "error_message", "uid2_resolutions").show(truncate=False)
 ```
 
-Each identifier is resolved by your UID2 operator before the request leaves Databricks, so The Trade Desk only ever receives resolved UID2s, never raw emails or phone numbers. Resolution happens per row in both `push_data` and `batch_process`, and the raw-identifier-to-UID2 mapping comes back in the `uid2_resolutions` column.
+Each identifier is resolved by your UID2 operator before any request is made to The Trade Desk's Data APIs, so The Trade Desk only ever receives resolved UID2s, never raw emails or phone numbers. The raw identifier is sent to the UID2 operator configured in `uid2_config` in order to be resolved, so choose that operator accordingly. Resolution happens per row in both `push_data` and `batch_process`, and the raw-identifier-to-UID2 mapping comes back in the `uid2_resolutions` column.
 
 ---
 
