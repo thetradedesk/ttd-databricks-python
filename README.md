@@ -226,7 +226,7 @@ if failed_df.count():
 
 Use this for incremental, distributed processing backed by Delta tables. Only records added since the last run are sent.
 
-It is recommended to create a separate set of Delta tables for each advertiser or data provider
+Users must create a separate set of Delta tables for each advertiser or data provider
 you send data for. Pass `table_name` to the `setup_*` helpers to name each set.
 
 **One time steps:** Create the input, output, and metadata Delta tables. These are created once and reused by every future run — the metadata table is what tracks how far the last run got, so do not drop or recreate it between runs. The `setup_*` helpers return the existing table if it is already there, so they are safe to re-run.
